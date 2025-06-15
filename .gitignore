@@ -1,0 +1,40 @@
+# Ambientes Virtuais
+venv/
+.venv/
+env/
+ENV/
+
+# Cache e arquivos compilados do Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+
+# Logs e dependências
+pip-log.txt
+
+# Arquivos de ambiente e segredos
+.env
+secrets.json
+
+# Bancos de dados locais de teste
+*.sqlite
+*.db
+test.db
+
+# Artefatos de teste
+.coverage
+.pytest_cache/
+.cache/
+
+# Arquivos de sistema operacional
+.DS_Store
+Thumbs.db
+Desktop.ini
+*~
+
+# Arquivos de editores de código
+.vscode/
+.idea/
+*.swp
+*.swo
