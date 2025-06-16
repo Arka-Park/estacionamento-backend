@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .routes import estacionamento as estacionamento_routes
+from src.routes import estacionamento as estacionamento_routes
 
 @asynccontextmanager
 async def lifespan(app: FastAPI): # pylint: disable=W0613, W0621

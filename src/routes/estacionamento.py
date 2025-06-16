@@ -1,8 +1,8 @@
 from typing import List
 from fastapi import APIRouter, Depends, status, HTTPException
 from sqlalchemy.orm import Session
-from ..database import get_db
-from ..models import estacionamento as models
+from src.database import get_db
+from src.models import estacionamento as models
 
 router = APIRouter(
     prefix="/api/estacionamentos",
