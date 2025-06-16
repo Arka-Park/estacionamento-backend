@@ -8,7 +8,7 @@ from .routes import estacionamento as estacionamento_routes
 @asynccontextmanager
 async def lifespan(app: FastAPI): # pylint: disable=W0613, W0621
     print("Iniciando a aplicação e criando as tabelas do banco de dados...")
-    estacionamento_model.Base.metadata.create_all(bind=engine)
+    #estacionamento_model.Base.metadata.create_all(bind=engine)
     yield
     print("Aplicação finalizada.")
 
