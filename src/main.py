@@ -1,14 +1,11 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .database import engine
-from .models import estacionamento as estacionamento_model
 from .routes import estacionamento as estacionamento_routes
 
 @asynccontextmanager
 async def lifespan(app: FastAPI): # pylint: disable=W0613, W0621
-    print("Iniciando a aplicação e criando as tabelas do banco de dados...")
-    #estacionamento_model.Base.metadata.create_all(bind=engine)
+    print("Iniciando a aplicação ...")
     yield
     print("Aplicação finalizada.")
 
