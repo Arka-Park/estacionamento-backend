@@ -20,7 +20,7 @@ Por favor, consulte as instruções no `README.md` do repositório geral para um
 
 Caso queira rodar o deploy use o link
 
-[TPPE Backend](tppe-estacionamento.up.railway.app/docs)
+[TPPE Backend](https://tppe-estacionamento.up.railway.app)
 
 ## 🔧 Desenvolvimento Local (Isolado)
 
