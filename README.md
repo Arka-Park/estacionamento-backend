@@ -18,6 +18,10 @@ A maneira recomendada de executar este serviço é através do repositório orqu
 
 Por favor, consulte as instruções no `README.md` do repositório geral para um setup completo com um único comando.
 
+Caso queira rodar o deploy use o link
+
+[TPPE Backend](tppe-estacionamento.up.railway.app/docs)
+
 ## 🔧 Desenvolvimento Local (Isolado)
 
 Se você precisa rodar e testar o backend de forma isolada, siga os passos abaixo.

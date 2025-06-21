@@ -18,7 +18,7 @@ app = FastAPI(
 
 origins = [
     "http://localhost:3000",
-    "https://tppe-estacionamento-front.vercel.app"
+    "https://tppe-estacionamento.vercel.app"
 ]
 
 app.add_middleware(
