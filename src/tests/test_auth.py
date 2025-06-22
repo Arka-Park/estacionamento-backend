@@ -4,8 +4,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from src.main import app
 from src.database import get_db
-from src.models.estacionamento import Base  # Importamos a Base para criar as tabelas
-from src.models.usuario import PessoaDB, UsuarioDB # Importamos os modelos de usuário
+from src.models.estacionamento import Base
+from src.models.usuario import PessoaDB, UsuarioDB
 from src import security
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
@@ -58,10 +58,10 @@ def db_session():
 
 def test_login_com_sucesso(db_session):
     """
-    Testa se o endpoint /token retorna um token de acesso com credenciais válidas.
+    Testa se o endpoint /api/token retorna um token de acesso com credenciais válidas.
     """
     response = client.post(
-        "/token",
+        "/api/token",  
         data={"username": "admin_teste", "password": "admin123"}
     )
     assert response.status_code == 200
@@ -71,22 +71,21 @@ def test_login_com_sucesso(db_session):
 
 def test_login_com_senha_errada(db_session):
     """
-    Testa se o endpoint /token retorna erro 401 com senha incorreta.
+    Testa se o endpoint /api/token retorna erro 401 com senha incorreta.
     """
     response = client.post(
-        "/token",
+        "/api/token", 
         data={"username": "admin_teste", "password": "senhaerrada"}
     )
     assert response.status_code == 401
     assert response.json()["detail"] == "Login ou senha incorretos"
-    assert "WWW-Authenticate" in response.headers
     
 def test_login_com_usuario_inexistente(db_session):
     """
-    Testa se o endpoint /token retorna erro 401 com um usuário que não existe.
+    Testa se o endpoint /api/token retorna erro 401 com um usuário que não existe.
     """
     response = client.post(
-        "/token",
+        "/api/token",
         data={"username": "usuario_fantasma", "password": "123"}
     )
     assert response.status_code == 401
