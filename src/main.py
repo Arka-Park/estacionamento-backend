@@ -1,14 +1,36 @@
+import time
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from src.routes import estacionamento as estacionamento_routes
-from src.models import usuario as usuario_model
-from src.routes import auth as auth_routes
-from src.database import engine
+from sqlalchemy.exc import OperationalError
+
+from .database import engine
+from .models import estacionamento as estacionamento_model, usuario as usuario_model, evento as evento_model # 1. Importe o novo modelo
+from .routes import estacionamento as estacionamento_routes
+from .routes import auth as auth_routes
+from .routes import evento as evento_routes # 2. Importe o novo router
+
+MAX_RETRIES = 5
+RETRY_DELAY = 5 # segundos
 
 @asynccontextmanager
 async def lifespan(app: FastAPI): # pylint: disable=W0613, W0621
-    print("Iniciando a aplicação ...")
+    print("Iniciando a aplicação...")
+    
+    for attempt in range(MAX_RETRIES):
+        try:
+            with engine.connect() as connection:
+                print("Conexão com o banco de dados estabelecida com sucesso!")
+                break
+        except OperationalError as e:
+            print(f"Erro ao conectar ao banco de dados: {e}")
+            if attempt < MAX_RETRIES - 1:
+                print(f"Tentando novamente em {RETRY_DELAY} segundos...")
+                time.sleep(RETRY_DELAY)
+            else:
+                print("Não foi possível conectar ao banco de dados após várias tentativas.")
+                raise
+    
     yield
     print("Aplicação finalizada.")
 
@@ -32,8 +54,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(estacionamento_routes.router)
 app.include_router(auth_routes.router, prefix="/api")
+app.include_router(estacionamento_routes.router)
+app.include_router(evento_routes.router)
 
 @app.get("/health", tags=["Health Check"])
 def health_check():
