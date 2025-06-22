@@ -33,7 +33,7 @@ app.add_middleware(
 )
 
 app.include_router(estacionamento_routes.router)
-app.include_router(auth_routes.router)
+app.include_router(auth_routes.router, prefix="/api")
 
 @app.get("/health", tags=["Health Check"])
 def health_check():
