@@ -2,6 +2,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from src.routes import estacionamento as estacionamento_routes
+from src.models import usuario as usuario_model
+from src.routes import auth as auth_routes
+from src.database import engine
 
 @asynccontextmanager
 async def lifespan(app: FastAPI): # pylint: disable=W0613, W0621
@@ -30,6 +33,7 @@ app.add_middleware(
 )
 
 app.include_router(estacionamento_routes.router)
+app.include_router(auth_routes.router)
 
 @app.get("/health", tags=["Health Check"])
 def health_check():

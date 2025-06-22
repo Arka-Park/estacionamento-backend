@@ -2,8 +2,7 @@ from typing import Optional
 from sqlalchemy import Column, Integer, String, Numeric
 from sqlalchemy.orm import declarative_base
 from pydantic import BaseModel, ConfigDict
-
-Base = declarative_base()
+from .base import Base
 
 class EstacionamentoDB(Base):
     __tablename__ = "estacionamento"

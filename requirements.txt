@@ -7,3 +7,7 @@ alembic==1.15.2
 asyncpg
 pytest
 httpx
+passlib[bcrypt]
+python-jose[cryptography]
+python-multipart
+pydantic[email]
