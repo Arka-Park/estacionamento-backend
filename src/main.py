@@ -3,15 +3,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import OperationalError
-
 from .database import engine
-from .models import estacionamento as estacionamento_model, usuario as usuario_model, evento as evento_model # 1. Importe o novo modelo
+from .models import estacionamento as estacionamento_model, usuario as usuario_model, evento as evento_model
 from .routes import estacionamento as estacionamento_routes
 from .routes import auth as auth_routes
-from .routes import evento as evento_routes # 2. Importe o novo router
-
+from .routes import evento as evento_routes
+from .routes import usuario as usuario_routes 
 MAX_RETRIES = 5
-RETRY_DELAY = 5 # segundos
+RETRY_DELAY = 5
 
 @asynccontextmanager
 async def lifespan(app: FastAPI): # pylint: disable=W0613, W0621
@@ -57,6 +56,7 @@ app.add_middleware(
 app.include_router(auth_routes.router, prefix="/api")
 app.include_router(estacionamento_routes.router)
 app.include_router(evento_routes.router)
+app.include_router(usuario_routes.router)
 
 @app.get("/health", tags=["Health Check"])
 def health_check():

@@ -1,7 +1,7 @@
 from typing import Optional
 from datetime import date, time
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import Column, Integer, String, Numeric, Date, Time, ForeignKey # 2. Importe o tipo 'Time'
+from sqlalchemy import Column, Integer, String, Numeric, Date, Time, ForeignKey
 from .base import Base
 
 class EventoDB(Base):
@@ -14,6 +14,7 @@ class EventoDB(Base):
     hora_fim = Column(Time, nullable=False)
     valor_acesso_unico = Column(Numeric(10, 2))
     id_estacionamento = Column(Integer, ForeignKey("estacionamento.id"), nullable=False)
+    admin_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
 
 
 class EventoCreate(BaseModel):
@@ -40,5 +41,6 @@ class Evento(BaseModel):
     hora_fim: time
     valor_acesso_unico: Optional[float] = None
     id_estacionamento: int
+    admin_id: Optional[int] = None 
 
     model_config = ConfigDict(from_attributes=True)

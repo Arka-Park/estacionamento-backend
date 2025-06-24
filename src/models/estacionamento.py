@@ -1,6 +1,5 @@
 from typing import Optional
-from sqlalchemy import Column, Integer, String, Numeric
-from sqlalchemy.orm import declarative_base
+from sqlalchemy import Column, Integer, String, Numeric, ForeignKey
 from pydantic import BaseModel, ConfigDict
 from .base import Base
 
@@ -14,6 +13,7 @@ class EstacionamentoDB(Base):
     valor_primeira_hora = Column(Numeric(10, 2))
     valor_demais_horas = Column(Numeric(10, 2))
     valor_diaria = Column(Numeric(10, 2))
+    admin_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
 
 
 class EstacionamentoCreate(BaseModel):
@@ -26,5 +26,6 @@ class EstacionamentoCreate(BaseModel):
 
 class Estacionamento(EstacionamentoCreate):
     id: int
+    admin_id: Optional[int] = None 
 
     model_config = ConfigDict(from_attributes=True)
