@@ -5,13 +5,13 @@ from sqlalchemy.orm import Session
 from src.database import get_db
 from src.models import usuario as models
 from src import security
-import logging # NOVO: Adicionar import para logging
+import logging # Manter import para logging se outros endpoints usarem
 
 router = APIRouter(tags=["Autenticação"])
 
-# NOVO: Configurar logging para o módulo
-logging.basicConfig(level=logging.INFO)
+# Configurar logging (se ainda não estiver configurado globalmente ou for necessário aqui)
 logger = logging.getLogger(__name__)
+
 
 @router.post("/token", response_model=models.TokenData)
 def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
@@ -25,23 +25,14 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db:
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    # NOVO: Adicionar bloco try-except para capturar erros na verificação da senha
-    try:
-        # AQUI É ONDE O ERRO PROVAVELMENTE ACONTECE
-        if not security.verify_password(form_data.password, user.senha):
-            logger.warning(f"Tentativa de login falha: senha incorreta para usuário '{form_data.username}'.")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Login ou senha incorretos",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-    except Exception as e:
-        # Captura qualquer exceção durante a verificação da senha e loga
-        logger.error(f"Erro inesperado durante a verificação da senha para usuário '{form_data.username}': {e}", exc_info=True)
-        # Re-raise como 500 para indicar um problema interno do servidor
+    # REMOVIDO O BLOCO TRY-EXCEPT QUE CAUSAVA O ERRO 500 INESPERADO
+    # O `security.verify_password` já cuida da lógica e a condição `if not` é suficiente
+    if not security.verify_password(form_data.password, user.senha):
+        logger.warning(f"Tentativa de login falha: senha incorreta para usuário '{form_data.username}'.")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Erro interno no servidor durante a verificação de credenciais. Verifique os logs do servidor."
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Login ou senha incorretos",
+            headers={"WWW-Authenticate": "Bearer"},
         )
         
     access_token = security.create_access_token(
