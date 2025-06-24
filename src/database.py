@@ -1,15 +1,15 @@
 import os
-from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from src.models.base import Base
 
-load_dotenv()
+if os.environ.get("TESTING") == "True":
+    SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
+else:
+    SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://admin:admin123@db:5432/estacionamento")
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    raise Exception("A variável DATABASE_URL não está definida")
+engine = create_engine(SQLALCHEMY_DATABASE_URL)
 
-engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def get_db():

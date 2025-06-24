@@ -21,20 +21,18 @@ class UsuarioDB(Base):
     role = Column(Enum('admin', 'funcionario', name='user_role'), nullable=False)
     admin_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
 
-
 class UsuarioBase(BaseModel):
     login: str
     role: str = 'funcionario'
 
 class UsuarioCreate(UsuarioBase):
     password: str
-    admin_id: Optional[int] = None 
-
+    admin_id: Optional[int] = None
 
 class Usuario(UsuarioBase):
     id: int
     id_pessoa: int
-    admin_id: Optional[int] = None 
+    admin_id: Optional[int] = None
     
     model_config = ConfigDict(from_attributes=True)
 

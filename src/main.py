@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import OperationalError
-from .database import engine
+import src.database
 from .models import estacionamento as estacionamento_model, usuario as usuario_model, evento as evento_model
 from .routes import estacionamento as estacionamento_routes
 from .routes import auth as auth_routes
@@ -18,7 +18,7 @@ async def lifespan(app: FastAPI): # pylint: disable=W0613, W0621
     
     for attempt in range(MAX_RETRIES):
         try:
-            with engine.connect() as connection:
+            with src.database.engine.connect() as connection:
                 print("Conexão com o banco de dados estabelecida com sucesso!")
                 break
         except OperationalError as e:
