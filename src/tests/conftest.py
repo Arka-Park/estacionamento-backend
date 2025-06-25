@@ -1,15 +1,17 @@
+# pylint: disable=redefined-outer-name,too-many-arguments,unused-import
+
+import os
 import pytest
 from starlette.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from _pytest.monkeypatch import MonkeyPatch
-import os
 from src.main import app
 from src.database import get_db
 from src.models.base import Base
 from src.models.usuario import UsuarioDB, PessoaDB
-from src.security import get_password_hash, create_access_token
-from datetime import timedelta
+from src.security import get_password_hash
+
 
 os.environ["TESTING"] = "True"
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
@@ -25,7 +27,7 @@ def setup_test_database_environment(monkeypatch_session):
     monkeypatch_session.setattr("src.database.SessionLocal", TestingSessionLocal)
 
     Base.metadata.create_all(bind=test_engine)
-    
+
     yield
 
     Base.metadata.drop_all(bind=test_engine)
@@ -53,7 +55,7 @@ def test_client_fixture(db_session):
 
     with TestClient(app) as c:
         yield c
-    
+
     app.dependency_overrides.clear()
 
 

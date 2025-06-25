@@ -1,10 +1,10 @@
+# pylint: disable=redefined-outer-name,too-many-arguments
+
 import pytest
 from sqlalchemy.exc import ProgrammingError
 from src import security
 from src.models.estacionamento import EstacionamentoDB
 from src.models.usuario import PessoaDB, UsuarioDB
-
-# pylint: disable=redefined-outer-name,too-many-arguments
 
 @pytest.fixture(scope="function")
 def setup_evento_data(db_session):
@@ -12,8 +12,6 @@ def setup_evento_data(db_session):
         try:
             db_session.execute(table.delete())
         except ProgrammingError:
-            pass
-        except Exception:
             pass
     db_session.commit()
 

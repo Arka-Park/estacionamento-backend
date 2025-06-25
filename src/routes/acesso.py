@@ -1,4 +1,4 @@
-# pylint: disable=too-many-arguments,line-too-long,too-many-locals
+# pylint: disable=too-many-arguments,line-too-long,too-many-locals, duplicate-code
 
 from datetime import datetime, timezone
 from typing import List
