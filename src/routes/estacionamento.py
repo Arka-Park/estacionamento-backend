@@ -16,7 +16,7 @@ class EstacionamentoUpdate(BaseModel):
     valor_diaria: Optional[float] = None
 
 router = APIRouter(
-    prefix="/api/estacionamentos",
+    prefix="/estacionamentos",
     tags=["Estacionamentos"],
 )
 

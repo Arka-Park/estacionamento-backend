@@ -10,7 +10,7 @@ from ..models.usuario import UsuarioDB, Usuario # Importar UsuarioDB e Usuario
 from ..auth.dependencies import get_current_user, get_current_admin_user # get_current_user agora será mais usado
 
 router = APIRouter(
-    prefix="/api/eventos",
+    prefix="/eventos",
     tags=["Eventos"],
     # Removendo a dependência global de admin
     # dependencies=[Depends(get_current_admin_user)]
