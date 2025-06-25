@@ -5,7 +5,7 @@ from sqlalchemy import Column, Integer, String, DateTime, Numeric, ForeignKey, E
 from .base import Base
 
 class AcessoDB(Base):
-    __tablename__ = "acessos"
+    __tablename__ = "acesso"
 
     id = Column(Integer, primary_key=True, index=True)
     placa = Column(String(10), nullable=False, index=True)

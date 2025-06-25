@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Path
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
-from datetime import datetime, timedelta, date, time
-from src.database import get_db
+from datetime import datetime, timedelta, date, time, timezone
 from typing import List
+from src.database import get_db
 from src.models import acesso as models_acesso
 from src.models import estacionamento as models_estacionamento
 from src.models import evento as models_evento
@@ -29,6 +29,7 @@ def check_acesso_access(
         authorized_admin_id = current_user.id
     elif current_user.role == 'funcionario':
         authorized_admin_id = current_user.admin_id
+
     if db_acesso.admin_id != authorized_admin_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Você não tem permissão para acessar este registro de acesso.")
 
@@ -58,7 +59,7 @@ def registrar_entrada(
     if db_estacionamento.admin_id != authorized_admin_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Você não tem permissão para registrar acessos neste estacionamento.")
 
-    hora_entrada = datetime.now()
+    hora_entrada = datetime.now(timezone.utc)
     today_date = hora_entrada.date()
     current_time = hora_entrada.time()
 
@@ -68,7 +69,7 @@ def registrar_entrada(
             models_evento.EventoDB.data_evento == today_date,
             models_evento.EventoDB.hora_inicio <= current_time,
             models_evento.EventoDB.hora_fim >= current_time,
-            models_evento.EventoDB.admin_id == authorized_admin_id
+            models_evento.EventoDB.admin_id == authorized_admin_id # Evento deve ser gerenciado pelo mesmo admin
         )
     ).first()
 
@@ -91,7 +92,7 @@ def registrar_entrada(
     return db_acesso
 
 
-@router.put("/{acesso_id}/saida", response_model=models_acesso.Acesso)
+@router.api_route("/{acesso_id}/saida", methods=["PUT", "OPTIONS"], response_model=models_acesso.Acesso)
 def registrar_saida(
     acesso_id: int,
     db: Session = Depends(get_db),
@@ -101,20 +102,29 @@ def registrar_saida(
     Registra a saída de um veículo e calcula o valor total.
     """
     if current_user.role not in ['admin', 'funcionario']:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Você não tem permissão para registrar saídas.")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Você não tem permissão para registrar saídas"
+        )
 
     db_acesso = check_acesso_access(acesso_id, db, current_user)
 
     if db_acesso.hora_saida:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Saída já registrada para este acesso.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Saída já registrada para este acesso."
+        )
 
-    db_acesso.hora_saida = datetime.now()
+    db_acesso.hora_saida = datetime.now(timezone.utc)
 
     db_estacionamento = db.query(models_estacionamento.EstacionamentoDB).filter(
         models_estacionamento.EstacionamentoDB.id == db_acesso.id_estacionamento
     ).first()
     if not db_estacionamento:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Estacionamento associado não encontrado.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Estacionamento associado não encontrado."
+        )
 
     valor_total = 0.0
 
@@ -130,8 +140,13 @@ def registrar_saida(
             if total_minutes <= 60:
                 valor_total = float(db_estacionamento.valor_primeira_hora)
             else:
-                remaining_minutes = total_minutes - 60
-                valor_total = float(db_estacionamento.valor_primeira_hora) + (remaining_minutes / 60) * float(db_estacionamento.valor_demais_horas)
+                hours_to_charge = total_minutes / 60
+                if total_minutes % 60 > 0:
+                    hours_to_charge = int(hours_to_charge) + 1
+
+                valor_total = float(db_estacionamento.valor_primeira_hora)
+                if hours_to_charge > 1:
+                    valor_total += (hours_to_charge - 1) * float(db_estacionamento.valor_demais_horas)
 
     elif db_acesso.tipo_acesso == 'hora':
         time_parked = db_acesso.hora_saida - db_acesso.hora_entrada
@@ -148,7 +163,7 @@ def registrar_saida(
                 valor_total = float(db_estacionamento.valor_primeira_hora)
                 if hours_to_charge > 1:
                     valor_total += (hours_to_charge - 1) * float(db_estacionamento.valor_demais_horas)
-        else: 
+        else: # Cobrança por diária
             db_acesso.tipo_acesso = 'diaria'
             
             total_seconds_parked = time_parked.total_seconds()
