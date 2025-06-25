@@ -1,12 +1,10 @@
 import pytest
 from fastapi import status
-from datetime import datetime, timedelta, date, time
+from datetime import datetime, timedelta, date, timezone 
 from typing import List # Garante que List seja importado para o response_model
 
-# Certifique-se de que conftest.py está configurado para fornecer 'client', 'auth_headers', 'auth_headers_employee', 'db_session'
 
 def test_register_entry_as_admin(client, auth_headers, db_session):
-    # Setup: Cria um estacionamento como admin
     estacionamento_data = {
         "nome": "Estacionamento Teste Acesso Admin",
         "total_vagas": 100,
@@ -89,7 +87,7 @@ def test_register_entry_event_access(client, auth_headers, db_session):
     assert response_estacionamento.status_code == status.HTTP_201_CREATED
     estacionamento_id = response_estacionamento.json()["id"]
 
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
     event_data = {
         "nome": "Show Rock Teste",
         "data_evento": now.strftime("%Y-%m-%d"),
@@ -166,7 +164,7 @@ def test_register_exit_hourly_more_than_one_hour(client, auth_headers, db_sessio
 
     from src.models.acesso import AcessoDB
     db_acesso = db_session.query(AcessoDB).filter(AcessoDB.id == acesso_id).first()
-    db_acesso.hora_entrada = datetime.now() - timedelta(hours=2, minutes=30) # 2.5 horas estacionado
+    db_acesso.hora_entrada = datetime.now(timezone.utc) - timedelta(hours=2, minutes=30) # 2.5 horas estacionado
     db_session.add(db_acesso)
     db_session.commit()
     db_session.refresh(db_acesso)
@@ -204,7 +202,7 @@ def test_register_exit_daily_over_24_hours(client, auth_headers, db_session):
 
     from src.models.acesso import AcessoDB
     db_acesso = db_session.query(AcessoDB).filter(AcessoDB.id == acesso_id).first()
-    db_acesso.hora_entrada = datetime.now() - timedelta(hours=26)
+    db_acesso.hora_entrada = datetime.now(timezone.utc) - timedelta(hours=26)
     db_session.add(db_acesso)
     db_session.commit()
     db_session.refresh(db_acesso)
@@ -241,7 +239,7 @@ def test_register_exit_daily_multiple_days(client, auth_headers, db_session):
 
     from src.models.acesso import AcessoDB
     db_acesso = db_session.query(AcessoDB).filter(AcessoDB.id == acesso_id).first()
-    db_acesso.hora_entrada = datetime.now() - timedelta(hours=53) # 2 dias e 5 horas
+    db_acesso.hora_entrada = datetime.now(timezone.utc) - timedelta(hours=53) # 2 dias e 5 horas
     db_session.add(db_acesso)
     db_session.commit()
     db_session.refresh(db_acesso)
@@ -249,8 +247,6 @@ def test_register_exit_daily_multiple_days(client, auth_headers, db_session):
     response_exit = client.put(f"/api/acessos/{acesso_id}/saida", headers=auth_headers)
     assert response_exit.status_code == status.HTTP_200_OK
     data = response_exit.json()
-    # EXPECTATIVA ATUALIZADA (com base no output anterior de 135.0):
-    # 2 diárias (2 * 50.0) + 1ª hora do dia restante (10.0) + Horas restantes (5h) * 5.0 = 100 + 10 + 25 = 135.0
     expected_value = (2 * 50.0) + 10.0 + (5 * 5.0) # Ajustado para o comportamento observado
     assert data["valor_total"] == round(expected_value, 2)
     assert data["tipo_acesso"] == "diaria"
@@ -268,7 +264,7 @@ def test_register_exit_event_specific_value(client, auth_headers, db_session):
     assert response_estacionamento.status_code == status.HTTP_201_CREATED
     estacionamento_id = response_estacionamento.json()["id"]
 
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
     event_data = {
         "nome": "Festa Junina",
         "data_evento": now.strftime("%Y-%m-%d"),

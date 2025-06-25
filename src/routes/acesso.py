@@ -1,9 +1,10 @@
+# src/routes/acesso.py
 from fastapi import APIRouter, Depends, HTTPException, status, Path
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
-from datetime import datetime, timedelta, date, time, timezone
-from typing import List
-from src.database import get_db
+from datetime import datetime, timedelta, date, time, timezone # Importe timezone
+from src.database import get_db # Importe get_db
+from typing import List, Optional
 from src.models import acesso as models_acesso
 from src.models import estacionamento as models_estacionamento
 from src.models import evento as models_evento
@@ -15,6 +16,7 @@ router = APIRouter(
     tags=["Acessos"],
 )
 
+# Helper para verificar permissão de acesso a um acesso de estacionamento
 def check_acesso_access(
     acesso_id: int,
     db: Session,
@@ -30,6 +32,7 @@ def check_acesso_access(
     elif current_user.role == 'funcionario':
         authorized_admin_id = current_user.admin_id
 
+    # O admin_id do acesso deve ser o ID do admin que registrou (ou do admin do funcionário)
     if db_acesso.admin_id != authorized_admin_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Você não tem permissão para acessar este registro de acesso.")
 
@@ -46,6 +49,7 @@ def registrar_entrada(
     Registra a entrada de um veículo no estacionamento.
     Verifica eventos e atribui tipo de acesso automaticamente.
     """
+    # Funcionários e admins podem registrar entrada
     if current_user.role not in ['admin', 'funcionario']:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Você não tem permissão para registrar acessos.")
 
@@ -55,14 +59,16 @@ def registrar_entrada(
     if not db_estacionamento:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Estacionamento não encontrado.")
 
+    # Verifica se o usuário tem permissão para registrar acesso neste estacionamento
     authorized_admin_id = current_user.id if current_user.role == 'admin' else current_user.admin_id
     if db_estacionamento.admin_id != authorized_admin_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Você não tem permissão para registrar acessos neste estacionamento.")
 
-    hora_entrada = datetime.now(timezone.utc)
+    hora_entrada = datetime.now(timezone.utc) # ALTERADO: Adicionado timezone.utc
     today_date = hora_entrada.date()
     current_time = hora_entrada.time()
 
+    # Tenta encontrar um evento ativo para o estacionamento e horário
     active_event = db.query(models_evento.EventoDB).filter(
         and_(
             models_evento.EventoDB.id_estacionamento == acesso_data.id_estacionamento,
@@ -92,6 +98,7 @@ def registrar_entrada(
     return db_acesso
 
 
+# ALTERADO: Uso de @router.api_route para permitir métodos PUT e OPTIONS
 @router.api_route("/{acesso_id}/saida", methods=["PUT", "OPTIONS"], response_model=models_acesso.Acesso)
 def registrar_saida(
     acesso_id: int,
@@ -115,7 +122,7 @@ def registrar_saida(
             detail="Saída já registrada para este acesso."
         )
 
-    db_acesso.hora_saida = datetime.now(timezone.utc)
+    db_acesso.hora_saida = datetime.now(timezone.utc) # ALTERADO: Adicionado timezone.utc
 
     db_estacionamento = db.query(models_estacionamento.EstacionamentoDB).filter(
         models_estacionamento.EstacionamentoDB.id == db_acesso.id_estacionamento
@@ -127,6 +134,11 @@ def registrar_saida(
         )
 
     valor_total = 0.0
+
+    # Adicionada normalização de hora_entrada para garantir que seja timezone-aware (UTC)
+    # antes das subtrações, especialmente útil em ambientes de teste como SQLite
+    if db_acesso.hora_entrada.tzinfo is None:
+        db_acesso.hora_entrada = db_acesso.hora_entrada.replace(tzinfo=timezone.utc)
 
     if db_acesso.tipo_acesso == 'evento' and db_acesso.id_evento:
         db_evento = db.query(models_evento.EventoDB).filter(models_evento.EventoDB.id == db_acesso.id_evento).first()
