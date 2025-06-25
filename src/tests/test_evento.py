@@ -1,27 +1,27 @@
 import pytest
+from sqlalchemy.exc import ProgrammingError
 from src import security
 from src.models.estacionamento import EstacionamentoDB
 from src.models.usuario import PessoaDB, UsuarioDB
 
+# pylint: disable=redefined-outer-name,too-many-arguments
 
 @pytest.fixture(scope="function")
 def setup_evento_data(db_session):
-    """
-    Cria os dados necessários para os testes de evento:
-    um estacionamento e um usuário administrador.
-    Limpa o banco antes de cada teste que usar esta fixture.
-    """
     for table in reversed(UsuarioDB.metadata.sorted_tables):
-        db_session.execute(table.delete())
+        try:
+            db_session.execute(table.delete())
+        except ProgrammingError:
+            pass
+        except Exception:
+            pass
     db_session.commit()
-    
-    # 1. Cria um estacionamento de teste
+
     estacionamento = EstacionamentoDB(nome="Shopping Teste Evento", total_vagas=300)
     db_session.add(estacionamento)
     db_session.commit()
     db_session.refresh(estacionamento)
 
-    # 2. Cria um usuário administrador de teste
     pessoa = PessoaDB(nome="Admin Evento", cpf="98765432100", email="evento@test.com")
     db_session.add(pessoa)
     db_session.commit()
@@ -43,14 +43,12 @@ def setup_evento_data(db_session):
 
 @pytest.fixture(scope="function")
 def admin_evento_token(setup_evento_data):
-    """Cria um token JWT para o usuário administrador de teste."""
     user = setup_evento_data["admin_user"]
     token = security.create_access_token(data={"sub": user.login, "role": user.role})
     return {"Authorization": f"Bearer {token}"}
 
 
-def test_criar_evento_como_admin(client, setup_evento_data, admin_evento_token):
-    """Testa se um admin consegue criar um novo evento com sucesso."""
+def test_criar_evento(client, setup_evento_data, admin_evento_token):
     response = client.post(
         "/api/eventos/",
         headers=admin_evento_token,
@@ -69,8 +67,7 @@ def test_criar_evento_como_admin(client, setup_evento_data, admin_evento_token):
     assert data["hora_inicio"] == "18:00:00"
 
 
-def test_atualizar_evento_como_admin(client, setup_evento_data, admin_evento_token):
-    """Testa se um admin consegue atualizar um evento existente."""
+def test_atualizar_evento(client, setup_evento_data, admin_evento_token):
     res_create = client.post(
         "/api/eventos/",
         headers=admin_evento_token,
@@ -96,8 +93,7 @@ def test_atualizar_evento_como_admin(client, setup_evento_data, admin_evento_tok
     assert data["valor_acesso_unico"] == 20.0
 
 
-def test_deletar_evento_como_admin(client, setup_evento_data, admin_evento_token):
-    """Testa se um admin consegue deletar um evento."""
+def test_deletar_evento(client, setup_evento_data, admin_evento_token):
     res_create = client.post(
         "/api/eventos/",
         headers=admin_evento_token,
@@ -112,7 +108,6 @@ def test_deletar_evento_como_admin(client, setup_evento_data, admin_evento_token
     )
     evento_id = res_create.json()["id"]
 
-    # Deleta o evento
     response_delete = client.delete(f"/api/eventos/{evento_id}", headers=admin_evento_token)
     assert response_delete.status_code == 204
 

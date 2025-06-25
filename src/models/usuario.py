@@ -1,6 +1,6 @@
 from typing import Optional
 from sqlalchemy import Column, Integer, String, Enum, ForeignKey
-from sqlalchemy.orm import relationship 
+from sqlalchemy.orm import relationship
 from pydantic import BaseModel, ConfigDict, EmailStr
 from .base import Base
 
@@ -12,7 +12,7 @@ class PessoaDB(Base):
     cpf = Column(String(14), unique=True, nullable=False, index=True)
     email = Column(String(255), unique=True)
 
-    usuario = relationship("UsuarioDB", back_populates="pessoa", uselist=False) 
+    usuario = relationship("UsuarioDB", back_populates="pessoa", uselist=False)
 
 class UsuarioDB(Base):
     __tablename__ = "usuarios"
@@ -47,9 +47,9 @@ class UsuarioUpdate(UsuarioBase):
 
 class PessoaUpdate(BaseModel):
     nome: Optional[str] = None
-    cpf: Optional[str] = None 
+    cpf: Optional[str] = None
     email: Optional[EmailStr] = None
-    
+
     model_config = ConfigDict(from_attributes=True)
 
 class UsuarioUpdatePayload(BaseModel):
@@ -61,14 +61,14 @@ class Pessoa(BaseModel):
     nome: str
     cpf: str
     email: Optional[EmailStr] = None
-    
+
     model_config = ConfigDict(from_attributes=True)
 
 class Usuario(UsuarioBase):
     id: int
     id_pessoa: int
     admin_id: Optional[int] = None
-    pessoa: Optional[Pessoa] = None 
+    pessoa: Optional[Pessoa] = None
 
     model_config = ConfigDict(from_attributes=True)
 

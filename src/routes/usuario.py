@@ -1,9 +1,8 @@
+from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session, joinedload 
-from typing import List, Optional # Adicionado Optional, se necessário
-
+from sqlalchemy.orm import Session, joinedload
 from src.database import get_db
-from src.models.usuario import PessoaDB, UsuarioDB, UsuarioCreate, Usuario, PessoaCreate, UsuarioUpdate, PessoaUpdate, UsuarioUpdatePayload 
+from src.models.usuario import PessoaDB, UsuarioDB, UsuarioCreate, Usuario, PessoaCreate, UsuarioUpdatePayload
 from src.security import get_password_hash
 from src.auth.dependencies import get_current_user, get_current_admin_user
 
@@ -21,7 +20,7 @@ async def create_user_by_admin(
 ):
     if current_admin_user.role != 'admin':
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, 
+            status_code=status.HTTP_403_FORBIDDEN,
             detail="Apenas administradores podem criar usuários."
         )
 
@@ -54,10 +53,10 @@ async def create_user_by_admin(
         senha=hashed_password,
         role=user_data.role
     )
-    
+
     if user_data.role == 'funcionario':
         db_user.admin_id = current_admin_user.id
-    
+
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
@@ -69,12 +68,12 @@ async def list_users(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
-    query = db.query(UsuarioDB).options(joinedload(UsuarioDB.pessoa)) 
-    
+    query = db.query(UsuarioDB).options(joinedload(UsuarioDB.pessoa))
+
     if current_user.role == 'admin':
         query = query.filter(
-            (UsuarioDB.admin_id == current_user.id) | 
-            (UsuarioDB.id == current_user.id)          
+            (UsuarioDB.admin_id == current_user.id) |
+            (UsuarioDB.id == current_user.id)
         )
     elif current_user.role == 'funcionario':
         query = query.filter(UsuarioDB.id == current_user.id)
@@ -96,10 +95,10 @@ async def get_user(
     if current_user.role == 'admin':
         if db_user.role == 'admin' and db_user.id != current_user.id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Não autorizado a ver outro administrador.")
-        
+
         if db_user.role == 'funcionario' and db_user.admin_id != current_user.id:
-             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Não autorizado a ver este funcionário (não criado por você).")
-             
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Não autorizado a ver este funcionário.")
+
     elif current_user.role == 'funcionario':
         if db_user.id != current_user.id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Não autorizado a ver este usuário")
@@ -115,17 +114,17 @@ async def update_user(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
-    db_user = db.query(UsuarioDB).options(joinedload(UsuarioDB.pessoa)).filter(UsuarioDB.id == user_id).first() 
+    db_user = db.query(UsuarioDB).options(joinedload(UsuarioDB.pessoa)).filter(UsuarioDB.id == user_id).first()
     if not db_user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuário não encontrado")
 
     if current_user.role == 'admin':
         if db_user.role == 'admin' and db_user.id != current_user.id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Não autorizado a editar outro administrador.")
-        
+
         if db_user.role == 'funcionario' and db_user.admin_id != current_user.id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Não autorizado a editar este funcionário (não criado por você).")
-        
+
         if db_user.role == 'funcionario' and data_to_update.user_data.admin_id is not None and data_to_update.user_data.admin_id != db_user.admin_id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin não pode alterar o admin_id de um funcionário.")
 
@@ -144,7 +143,7 @@ async def update_user(
         if existing_login:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Login já em uso.")
         db_user.login = data_to_update.user_data.login
-    
+
     if data_to_update.user_data.password:
         db_user.senha = get_password_hash(data_to_update.user_data.password)
 
@@ -160,8 +159,8 @@ async def update_user(
 
     db.commit()
     db.refresh(db_user)
-    db.refresh(db_pessoa) 
-    
+    db.refresh(db_pessoa)
+
     return db_user
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -178,15 +177,15 @@ async def delete_user(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Você não pode deletar sua própria conta de administrador.")
 
     if db_user.role == 'funcionario' and db_user.admin_id != current_admin_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Você não tem permissão para deletar este funcionário (não criado por você).")
-    
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Você não tem permissão para deletar este funcionário.")
+
     if db_user.role == 'admin':
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Não é permitido deletar outros administradores.")
 
     db_pessoa = db.query(PessoaDB).filter(PessoaDB.id == db_user.id_pessoa).first()
     if db_pessoa:
         db.delete(db_pessoa)
-    
+
     db.delete(db_user)
     db.commit()
     return

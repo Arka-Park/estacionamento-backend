@@ -1,57 +1,36 @@
-import pytest
-from src.models.usuario import PessoaDB, UsuarioDB
-from src import security    
-
-@pytest.fixture(scope="function")
-def setup_auth_data(db_session):
-    """Cria uma pessoa e um usuário administrador para os testes de auth."""
-    pessoa = PessoaDB(nome="Admin Auth Test", cpf="12345678901", email="admin.auth@test.com")
-    db_session.add(pessoa)
-    db_session.commit()
-    db_session.refresh(pessoa)
-
-    hashed_password = security.get_password_hash("admin123")
-    usuario = UsuarioDB(
-        id_pessoa=pessoa.id,
-        login="admin_auth_test",
-        senha=hashed_password,
-        role="admin"
-    )
-    db_session.add(usuario)
-    db_session.commit()
-    return usuario
-
-def test_login_com_sucesso(client, setup_auth_data):
+def test_login_com_sucesso(client, test_admin_user):
     """
     Testa se o endpoint /api/token retorna um token de acesso com credenciais válidas.
     """
+    admin_user_obj, admin_password = test_admin_user
+
     response = client.post(
         "/api/token",
-        data={"username": "admin_auth_test", "password": "admin123"}
+        data={"username": admin_user_obj.login, "password": admin_password}
     )
     assert response.status_code == 200, f"Erro: {response.json()}"
-    data = response.json()
-    assert "access_token" in data
-    assert data["token_type"] == "bearer"
+    token_data = response.json()
+    assert "access_token" in token_data
+    assert token_data["token_type"] == "bearer"
 
-def test_login_com_senha_errada(client, setup_auth_data):
+def test_login_com_senha_errada(client):
     """
-    Testa se o endpoint /api/token retorna erro 401 com senha incorreta.
-    """
-    response = client.post(
-        "/api/token", 
-        data={"username": "admin_auth_test", "password": "senhaerrada"}
-    )
-    assert response.status_code == 401
-    assert response.json()["detail"] == "Login ou senha incorretos"
-    
-def test_login_com_usuario_inexistente(client, db_session):
-    """
-    Testa se o endpoint /api/token retorna erro 401 com um usuário que não existe.
+    Testa se o endpoint /api/token retorna 401 com senha inválida.
     """
     response = client.post(
         "/api/token",
-        data={"username": "usuario_fantasma", "password": "123"}
+        data={"username": "admin_test", "password": "senha_errada"}
     )
     assert response.status_code == 401
-    assert response.json()["detail"] == "Login ou senha incorretos"
+    assert response.json() == {"detail": "Login ou senha incorretos"}
+
+def test_login_com_usuario_inexistente(client):
+    """
+    Testa se o endpoint /api/token retorna 401 com usuário inexistente.
+    """
+    response = client.post(
+        "/api/token",
+        data={"username": "usuario_nao_existe", "password": "qualquersenha"}
+    )
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Login ou senha incorretos"}

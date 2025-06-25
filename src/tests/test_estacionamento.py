@@ -1,69 +1,39 @@
-import pytest
-from src import security
-from src.models.usuario import PessoaDB, UsuarioDB
+from fastapi import status
 
-
-@pytest.fixture(scope="function")
-def admin_estacionamento_token(db_session):
-    """
-    Cria um usuário admin de teste e retorna um token de acesso para ele.
-    """
-    pessoa = PessoaDB(nome="Admin Estacionamento", cpf="55544433322", email="estacionamento@test.com")
-    db_session.add(pessoa)
-    db_session.commit()
-    db_session.refresh(pessoa)
-
-    hashed_password = security.get_password_hash("estacionamento123")
-    admin_user = UsuarioDB(
-        id_pessoa=pessoa.id,
-        login="admin_estacionamento",
-        senha=hashed_password,
-        role="admin"
-    )
-    db_session.add(admin_user)
-    db_session.commit()
-    db_session.refresh(admin_user)
-    token = security.create_access_token(data={"sub": admin_user.login, "role": admin_user.role})
-    return {"Authorization": f"Bearer {token}"}
-
-
-def test_criar_estacionamento(client, db_session, admin_estacionamento_token):
-    """
-    Testa se um admin autenticado consegue criar um novo estacionamento.
-    """
-    response = client.post(
-        "/api/estacionamentos/",
-        headers=admin_estacionamento_token,  # 1. Envia o token de autenticação
-        json={"nome": "Estacionamento Teste Pytest", "total_vagas": 75}
-    )
-    assert response.status_code == 201, f"Erro: {response.json()}"
+def test_criar_estacionamento(client, auth_headers):
+    estacionamento_data = {
+        "nome": "Estacionamento Teste",
+        "endereco": "Rua Teste, 123",
+        "total_vagas": 50,
+        "valor_primeira_hora": 10.0,
+        "valor_demais_horas": 5.0,
+        "valor_diaria": 40.0
+    }
+    response = client.post("/api/estacionamentos/", json=estacionamento_data, headers=auth_headers) # <--- USAR auth_headers
+    assert response.status_code == status.HTTP_201_CREATED
     data = response.json()
-    assert data["nome"] == "Estacionamento Teste Pytest"
+    assert data["nome"] == estacionamento_data["nome"]
+    assert data["total_vagas"] == estacionamento_data["total_vagas"]
 
+def test_listar_estacionamentos(client, auth_headers):
+    estacionamento_data_1 = {
+        "nome": "Estacionamento Teste 1",
+        "total_vagas": 10
+    }
+    estacionamento_data_2 = {
+        "nome": "Estacionamento Teste 2",
+        "total_vagas": 20
+    }
+    client.post("/api/estacionamentos/", json=estacionamento_data_1, headers=auth_headers)
+    client.post("/api/estacionamentos/", json=estacionamento_data_2, headers=auth_headers)
 
-def test_listar_estacionamentos(client, db_session, admin_estacionamento_token):
-    """
-    Testa se um admin autenticado consegue listar os estacionamentos.
-    """
-    client.post(
-        "/api/estacionamentos/",
-        headers=admin_estacionamento_token,
-        json={"nome": "Shopping A", "total_vagas": 150}
-    )
-    response = client.get("/api/estacionamentos/", headers=admin_estacionamento_token)
-    assert response.status_code == 200
+    response = client.get("/api/estacionamentos/", headers=auth_headers)
+    assert response.status_code == status.HTTP_200_OK
     data = response.json()
     assert isinstance(data, list)
-    assert len(data) > 0
-    assert data[0]["nome"] == "Shopping A"
+    assert len(data) >= 2
 
-
-def test_nao_deve_criar_estacionamento_sem_token(client, db_session):
-    """
-    Testa se a rota retorna 401 Unauthorized ao tentar criar sem um token.
-    """
-    response = client.post(
-        "/api/estacionamentos/",
-        json={"nome": "Estacionamento Fantasma", "total_vagas": 10}
-    )
-    assert response.status_code == 401
+def test_listar_estacionamentos_sem_autenticacao(client):
+    response = client.get("/api/estacionamentos/")
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert response.json() == {"detail": "Not authenticated"}

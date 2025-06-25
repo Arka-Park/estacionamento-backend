@@ -1,11 +1,11 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, status, HTTPException, Path
+from fastapi import APIRouter, Depends, status, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from src.database import get_db
 from src.models import estacionamento as models
 from src.models.usuario import UsuarioDB, Usuario
-from src.auth.dependencies import get_current_user, get_current_admin_user
+from src.auth.dependencies import get_current_user
 
 class EstacionamentoUpdate(BaseModel):
     nome: Optional[str] = None
@@ -21,8 +21,8 @@ router = APIRouter(
 )
 
 def check_estacionamento_access(
-    estacionamento_id: int, 
-    db: Session, 
+    estacionamento_id: int,
+    db: Session,
     current_user: Usuario
 ) -> models.EstacionamentoDB:
     db_estacionamento = db.query(models.EstacionamentoDB).filter(models.EstacionamentoDB.id == estacionamento_id).first()
@@ -34,15 +34,15 @@ def check_estacionamento_access(
         authorized_admin_id = current_user.id
     elif current_user.role == 'funcionario':
         authorized_admin_id = current_user.admin_id
-    
+
     if db_estacionamento.admin_id != authorized_admin_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Você não tem permissão para acessar este estacionamento.")
-    
+
     return db_estacionamento
 
 @router.post("/", response_model=models.Estacionamento, status_code=status.HTTP_201_CREATED)
 def criar_estacionamento(
-    estacionamento: models.EstacionamentoCreate, 
+    estacionamento: models.EstacionamentoCreate,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
@@ -51,7 +51,7 @@ def criar_estacionamento(
     """
     if current_user.role != 'admin':
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, 
+            status_code=status.HTTP_403_FORBIDDEN,
             detail="Apenas administradores podem criar estacionamentos."
         )
 
@@ -61,7 +61,7 @@ def criar_estacionamento(
             status_code=status.HTTP_409_CONFLICT,
             detail="Já existe um estacionamento com este nome."
         )
-    
+
     db_estacionamento = models.EstacionamentoDB(**estacionamento.model_dump(), admin_id=current_user.id)
     db.add(db_estacionamento)
     db.commit()
@@ -87,10 +87,10 @@ def listar_estacionamentos(
             .filter(UsuarioDB.admin_id == current_user.id, UsuarioDB.role == 'funcionario')
             .all()
         ]
-        
+
         query = query.filter(
-            (models.EstacionamentoDB.admin_id == current_user.id) |  # Estacionamentos criados pelo próprio admin
-            (models.EstacionamentoDB.admin_id.in_(managed_employee_ids)) # Estacionamentos criados por funcionários dele
+            (models.EstacionamentoDB.admin_id == current_user.id) |
+            (models.EstacionamentoDB.admin_id.in_(managed_employee_ids))
         )
     elif current_user.role == 'funcionario':
         if current_user.admin_id is None:
@@ -105,7 +105,7 @@ def listar_estacionamentos(
 
 @router.get("/{estacionamento_id}", response_model=models.Estacionamento)
 def obter_estacionamento(
-    estacionamento_id: int, 
+    estacionamento_id: int,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
@@ -118,8 +118,8 @@ def obter_estacionamento(
 
 @router.put("/{estacionamento_id}", response_model=models.Estacionamento)
 def atualizar_estacionamento(
-    estacionamento_id: int, 
-    estacionamento_update: EstacionamentoUpdate, 
+    estacionamento_id: int,
+    estacionamento_update: EstacionamentoUpdate,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
@@ -141,7 +141,7 @@ def atualizar_estacionamento(
 
 @router.delete("/{estacionamento_id}", status_code=status.HTTP_204_NO_CONTENT)
 def deletar_estacionamento(
-    estacionamento_id: int, 
+    estacionamento_id: int,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
@@ -152,4 +152,3 @@ def deletar_estacionamento(
 
     db.delete(estacionamento)
     db.commit()
-    return

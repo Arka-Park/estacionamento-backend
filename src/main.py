@@ -4,12 +4,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import OperationalError
 import src.database
-from src.models import estacionamento as estacionamento_model, usuario as usuario_model, evento as evento_model
 from src.routes import estacionamento as estacionamento_routes
 from src.routes import auth as auth_routes
 from src.routes import evento as evento_routes
 from src.routes import usuario as usuario_routes
 from src.routes import acesso as acesso_routes
+
+# pylint: disable=redefined-outer-name,unused-argument
 
 MAX_RETRIES = 5
 RETRY_DELAY = 5
@@ -17,10 +18,10 @@ RETRY_DELAY = 5
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("Iniciando a aplicação...")
-    
+
     for attempt in range(MAX_RETRIES):
         try:
-            with src.database.engine.connect() as connection:
+            with src.database.engine.connect():
                 print("Conexão com o banco de dados estabelecida com sucesso!")
                 break
         except OperationalError as e:
@@ -31,7 +32,7 @@ async def lifespan(app: FastAPI):
             else:
                 print("Não foi possível conectar ao banco de dados após várias tentativas.")
                 raise
-    
+
     yield
     print("Aplicação finalizada.")
 
@@ -56,7 +57,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_routes.router, prefix="/api")
-app.include_router(estacionamento_routes.router, prefix="/api") 
+app.include_router(estacionamento_routes.router, prefix="/api")
 app.include_router(evento_routes.router, prefix="/api")
 app.include_router(usuario_routes.router, prefix="/api")
 app.include_router(acesso_routes.router, prefix="/api")

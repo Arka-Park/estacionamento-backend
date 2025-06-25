@@ -2,74 +2,67 @@ import pytest
 from starlette.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from _pytest.monkeypatch import MonkeyPatch
+import os
 from src.main import app
-from src.database import get_db, engine as app_main_engine, SessionLocal as AppSessionLocal 
+from src.database import get_db
 from src.models.base import Base
 from src.models.usuario import UsuarioDB, PessoaDB
 from src.security import get_password_hash, create_access_token
-from _pytest.monkeypatch import MonkeyPatch
+from datetime import timedelta
 
-# Configuração para o banco de dados de teste em memória (SQLite)
+os.environ["TESTING"] = "True"
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
 test_engine = create_engine(
     SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
 
-# Fixture monkeypatch de escopo de sessão
+
+@pytest.fixture(scope="session", autouse=True)
+def setup_test_database_environment(monkeypatch_session):
+    monkeypatch_session.setattr("src.database.engine", test_engine)
+    monkeypatch_session.setattr("src.database.SessionLocal", TestingSessionLocal)
+
+    Base.metadata.create_all(bind=test_engine)
+    
+    yield
+
+    Base.metadata.drop_all(bind=test_engine)
+
+
+@pytest.fixture(name="db_session", scope="function")
+def db_session_fixture():
+    connection = test_engine.connect()
+    transaction = connection.begin()
+    db = TestingSessionLocal(bind=connection)
+    try:
+        yield db
+    finally:
+        db.close()
+        transaction.rollback()
+        connection.close()
+
+
+@pytest.fixture(name="client", scope="function")
+def test_client_fixture(db_session):
+    def _override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = _override_get_db
+
+    with TestClient(app) as c:
+        yield c
+    
+    app.dependency_overrides.clear()
+
+
 @pytest.fixture(scope="session")
-def session_monkeypatch(request):
+def monkeypatch_session():
     mpatch = MonkeyPatch()
     yield mpatch
     mpatch.undo()
 
-# Fixture para sobrescrever o banco de dados principal da aplicação durante os testes
-@pytest.fixture(scope="session")
-def override_app_db_connection(session_monkeypatch):
-    session_monkeypatch.setattr("src.database.engine", test_engine)
-    session_monkeypatch.setattr("src.database.SessionLocal", TestingSessionLocal)
-    yield
-
-# Esta fixture fornece uma sessão de banco de dados com transação para cada FUNÇÃO de teste.
-@pytest.fixture(name="db_session", scope="function") 
-def override_get_db_fixture():
-    connection = test_engine.connect()
-    transaction = connection.begin()
-    db = TestingSessionLocal(bind=connection)
-    
-    # Cria todas as tabelas ANTES de cada teste
-    Base.metadata.create_all(bind=test_engine) 
-
-    try:
-        yield db 
-    finally:
-        db.close() 
-        transaction.rollback() # Reverte todas as alterações feitas no teste
-        connection.close() 
-        # Garante que o banco está limpo para o próximo teste de função
-        Base.metadata.drop_all(bind=test_engine) 
-
-
-# Esta fixture fornece o cliente de teste para fazer requisições à API.
-# MUDOU PARA scope="function" para garantir que use a mesma db_session do teste.
-@pytest.fixture(name="client", scope="function") # <--- MUDANÇA CRUCIAL AQUI
-def test_client_fixture(override_app_db_connection, db_session): # Agora depende da db_session (function-scoped)
-    """
-    Cliente de teste FastAPI para fazer requisições HTTP nos testes.
-    """
-    # Define uma nova função geradora que será a sobrescrita para get_db.
-    # Esta função geradora VAI YIELD A INSTÂNCIA ESPECÍFICA de db_session para o teste atual.
-    def _override_get_db():
-        yield db_session # Yields a referência à sessão db_session para o FastAPI
-
-    app.dependency_overrides[get_db] = _override_get_db 
-    
-    with TestClient(app) as c:
-        yield c 
-    app.dependency_overrides.clear()
-
-
-# --- FIXTURES PARA USUÁRIOS E AUTENTICAÇÃO (Permanecem scope="function") ---
 
 @pytest.fixture(name="test_admin_user", scope="function")
 def create_test_admin_user(db_session):
@@ -108,7 +101,6 @@ def get_auth_headers(client, test_admin_user):
         data={"username": admin_obj.login, "password": admin_password}
     )
     token_data = response.json()
-    # Verifica se a chave 'access_token' existe antes de acessá-la
     if "access_token" not in token_data:
         pytest.fail(f"Token data does not contain 'access_token': {token_data}")
     access_token = token_data['access_token']
@@ -123,7 +115,6 @@ def get_auth_headers_employee(client, test_employee_user):
         data={"username": employee_obj.login, "password": employee_password}
     )
     token_data = response.json()
-    # Verifica se a chave 'access_token' existe antes de acessá-la
     if "access_token" not in token_data:
         pytest.fail(f"Token data does not contain 'access_token': {token_data}")
     access_token = token_data['access_token']

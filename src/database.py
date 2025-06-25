@@ -1,7 +1,6 @@
 import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from src.models.base import Base
 
 if os.environ.get("TESTING") == "True":
     SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"

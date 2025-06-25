@@ -41,6 +41,6 @@ class Evento(BaseModel):
     hora_fim: time
     valor_acesso_unico: Optional[float] = None
     id_estacionamento: int
-    admin_id: Optional[int] = None 
+    admin_id: Optional[int] = None
 
     model_config = ConfigDict(from_attributes=True)

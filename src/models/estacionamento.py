@@ -26,6 +26,6 @@ class EstacionamentoCreate(BaseModel):
 
 class Estacionamento(EstacionamentoCreate):
     id: int
-    admin_id: Optional[int] = None 
+    admin_id: Optional[int] = None
 
     model_config = ConfigDict(from_attributes=True)
