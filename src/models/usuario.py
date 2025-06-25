@@ -1,6 +1,6 @@
 from typing import Optional
 from sqlalchemy import Column, Integer, String, Enum, ForeignKey
-from sqlalchemy.orm import relationship # <--- Adicione esta importação
+from sqlalchemy.orm import relationship 
 from pydantic import BaseModel, ConfigDict, EmailStr
 from .base import Base
 
@@ -12,8 +12,6 @@ class PessoaDB(Base):
     cpf = Column(String(14), unique=True, nullable=False, index=True)
     email = Column(String(255), unique=True)
 
-    # Adicione o relacionamento inverso para UsuarioDB
-    # uselist=False porque um PessoaDB está associado a no máximo um UsuarioDB
     usuario = relationship("UsuarioDB", back_populates="pessoa", uselist=False) 
 
 class UsuarioDB(Base):
@@ -26,20 +24,14 @@ class UsuarioDB(Base):
     role = Column(Enum('admin', 'funcionario', name='user_role'), nullable=False)
     admin_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
 
-    # Adicione o relacionamento para PessoaDB
-    # Isso permitirá o joinedload(UsuarioDB.pessoa)
     pessoa = relationship("PessoaDB", back_populates="usuario")
 
-    # Relacionamento para administradores (opcional, se admin_id se refere a outro usuário)
-    # self_referencing relationship para que um admin possa ter 'funcionarios'
-    # 'remote_side=[id]' indica que 'id' é a coluna do lado remoto para este relacionamento
     funcionarios = relationship(
         "UsuarioDB",
-        backref="admin", # Nome do atributo inverso no modelo UsuarioDB para se referir ao admin que criou
-        remote_side=[id], # Indica que o 'id' desta classe é a coluna remota para o relacionamento
-        foreign_keys=[admin_id] # Especifica qual coluna é a foreign key
+        backref="admin",
+        remote_side=[id],
+        foreign_keys=[admin_id]
     )
-
 
 class UsuarioBase(BaseModel):
     login: str
@@ -49,23 +41,36 @@ class UsuarioCreate(UsuarioBase):
     password: str
     admin_id: Optional[int] = None
 
-class Pessoa(BaseModel): # <--- Movi Pessoa para cima, pois Usuario depende dela
+class UsuarioUpdate(UsuarioBase):
+    password: Optional[str] = None
+    admin_id: Optional[int] = None
+
+class PessoaUpdate(BaseModel):
+    nome: Optional[str] = None
+    cpf: Optional[str] = None 
+    email: Optional[EmailStr] = None
+    
+    model_config = ConfigDict(from_attributes=True)
+
+class UsuarioUpdatePayload(BaseModel):
+    user_data: UsuarioUpdate
+    pessoa_data: PessoaUpdate
+
+class Pessoa(BaseModel):
     id: int
     nome: str
     cpf: str
     email: Optional[EmailStr] = None
     
-    model_config = ConfigDict(from_attributes=True) # Mantenha esta configuração
+    model_config = ConfigDict(from_attributes=True)
 
 class Usuario(UsuarioBase):
     id: int
     id_pessoa: int
     admin_id: Optional[int] = None
-    
-    # Adicione a anotação para o relacionamento da pessoa
-    pessoa: Optional[Pessoa] = None # <--- Garante que os dados da Pessoa sejam incluídos na resposta
+    pessoa: Optional[Pessoa] = None 
 
-    model_config = ConfigDict(from_attributes=True) # Mantenha esta configuração
+    model_config = ConfigDict(from_attributes=True)
 
 class PessoaCreate(BaseModel):
     nome: str

@@ -1,14 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session, joinedload
-from typing import List, Optional
+from sqlalchemy.orm import Session, joinedload 
+from typing import List, Optional # Adicionado Optional, se necessário
 
 from src.database import get_db
-from src.models.usuario import PessoaDB, UsuarioDB, UsuarioCreate, Usuario, PessoaCreate
+from src.models.usuario import PessoaDB, UsuarioDB, UsuarioCreate, Usuario, PessoaCreate, UsuarioUpdate, PessoaUpdate, UsuarioUpdatePayload 
 from src.security import get_password_hash
 from src.auth.dependencies import get_current_user, get_current_admin_user
 
 router = APIRouter(
-    prefix="/usuarios", # <--- CORRIGIDO: Apenas "/usuarios"
+    prefix="/usuarios",
     tags=["Usuários"]
 )
 
@@ -111,7 +111,7 @@ async def get_user(
 @router.put("/{user_id}", response_model=Usuario)
 async def update_user(
     user_id: int,
-    user_update: UsuarioCreate, # Manter UsuarioCreate aqui por enquanto, mas considere UsuarioUpdate se precisar de campos opcionais
+    data_to_update: UsuarioUpdatePayload,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
@@ -126,32 +126,42 @@ async def update_user(
         if db_user.role == 'funcionario' and db_user.admin_id != current_user.id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Não autorizado a editar este funcionário (não criado por você).")
         
-        if db_user.role == 'funcionario' and user_update.admin_id is not None and user_update.admin_id != db_user.admin_id:
+        if db_user.role == 'funcionario' and data_to_update.user_data.admin_id is not None and data_to_update.user_data.admin_id != db_user.admin_id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin não pode alterar o admin_id de um funcionário.")
 
     elif current_user.role == 'funcionario':
         if db_user.id != current_user.id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Não autorizado a atualizar este usuário")
-        if user_update.role == 'admin' and db_user.role == 'funcionario':
+        if data_to_update.user_data.role == 'admin' and db_user.role == 'funcionario':
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Funcionário não pode se promover a admin.")
     else:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Não autorizado")
 
-    if user_update.login:
+    if data_to_update.user_data.login:
         existing_login = db.query(UsuarioDB).filter(
-            UsuarioDB.login == user_update.login, UsuarioDB.id != user_id
+            UsuarioDB.login == data_to_update.user_data.login, UsuarioDB.id != user_id
         ).first()
         if existing_login:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Login já em uso.")
-        db_user.login = user_update.login
+        db_user.login = data_to_update.user_data.login
     
-    if user_update.password:
-        db_user.senha = get_password_hash(user_update.password)
+    if data_to_update.user_data.password:
+        db_user.senha = get_password_hash(data_to_update.user_data.password)
 
-    db_user.role = user_update.role
+    db_user.role = data_to_update.user_data.role
+
+    db_pessoa = db.query(PessoaDB).filter(PessoaDB.id == db_user.id_pessoa).first()
+    if db_pessoa:
+        for field, value in data_to_update.pessoa_data.model_dump(exclude_unset=True).items():
+            setattr(db_pessoa, field, value)
+    else:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pessoa associada não encontrada.")
+
 
     db.commit()
     db.refresh(db_user)
+    db.refresh(db_pessoa) 
+    
     return db_user
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)

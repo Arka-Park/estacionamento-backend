@@ -1,14 +1,23 @@
 # src/tests/test_usuario.py
 import pytest
 from fastapi import status
+from sqlalchemy.orm import Session
 from src.security import verify_password, get_password_hash
-from src.models.usuario import UsuarioDB, PessoaDB
+# Importe apenas os modelos e status necessários, as fixtures serão injetadas
+from src.models.usuario import UsuarioDB, PessoaDB, UsuarioUpdatePayload, UsuarioUpdate, PessoaUpdate 
+
+
+# --- TESTES ---
+
+# As fixtures (test_admin_user, auth_headers, db_session, client, etc.)
+# serão automaticamente injetadas pelo Pytest a partir de conftest.py.
+# NENHUMA DEFINIÇÃO DE @pytest.fixture DEVE ESTAR AQUI.
 
 def test_admin_create_employee(client, db_session, auth_headers):
     """Admin deve conseguir criar um novo usuário funcionário."""
     new_employee_data = {
         "nome": "Novo Funcionario",
-        "cpf": "222.222.222-22",
+        "cpf": "22222222222", # CPF sem formatação para o backend
         "email": "novo.funcionario@example.com"
     }
     new_user_data = {
@@ -16,8 +25,7 @@ def test_admin_create_employee(client, db_session, auth_headers):
         "password": "senha_nova_func",
         "role": "funcionario"
     }
-    
-    # CORRIGIDO: Enviar dados aninhados sob as chaves esperadas pelo FastAPI
+
     request_body_for_creation = {
         "pessoa_data": new_employee_data,
         "user_data": new_user_data
@@ -25,11 +33,11 @@ def test_admin_create_employee(client, db_session, auth_headers):
 
     response = client.post(
         "/api/usuarios/",
-        json=request_body_for_creation, # Envia o dicionário aninhado
+        json=request_body_for_creation,
         headers=auth_headers
     )
     
-    print(response.json()) # Manter para ver a resposta detalhada em caso de novos 422
+    # print(response.json()) # Manter para ver a resposta detalhada em caso de novos 422
     
     assert response.status_code == status.HTTP_201_CREATED
     data = response.json()
@@ -37,18 +45,19 @@ def test_admin_create_employee(client, db_session, auth_headers):
     assert data["role"] == new_user_data["role"]
     assert "admin_id" in data
     assert data["admin_id"] == db_session.query(UsuarioDB).filter(UsuarioDB.login == "admin_test").first().id
+    assert data["pessoa"]["cpf"] == new_employee_data["cpf"] # Verifica CPF da pessoa criada
     
     # Verifica no banco de dados
     db_new_user = db_session.query(UsuarioDB).filter(UsuarioDB.login == new_user_data["login"]).first()
     assert db_new_user is not None
     assert verify_password(new_user_data["password"], db_new_user.senha)
     assert db_new_user.admin_id == db_session.query(UsuarioDB).filter(UsuarioDB.login == "admin_test").first().id
+    assert db_new_user.pessoa.cpf == new_employee_data["cpf"] # Verifica CPF no DB
 
 
 def test_employee_cannot_create_user(client, auth_headers_employee):
     """Funcionário NÃO deve conseguir criar um novo usuário."""
-    # CORRIGIDO: Enviar dados aninhados para este teste também
-    new_employee_data_attempt = {"nome": "Func Tentativa", "cpf": "333.333.333-33", "email": "func.tentativa@example.com"}
+    new_employee_data_attempt = {"nome": "Func Tentativa", "cpf": "33333333333", "email": "func.tentativa@example.com"}
     new_user_data_attempt = {"login": "func_tentativa_login", "password": "senha_func_tentativa", "role": "funcionario"}
 
     request_body_for_creation_attempt = {
@@ -58,11 +67,13 @@ def test_employee_cannot_create_user(client, auth_headers_employee):
     
     response = client.post(
         "/api/usuarios/",
-        json=request_body_for_creation_attempt, # Envia o dicionário aninhado
+        json=request_body_for_creation_attempt,
         headers=auth_headers_employee
     )
     
     assert response.status_code == status.HTTP_403_FORBIDDEN # Apenas admins podem criar
+    assert "detail" in response.json()
+    assert response.json()["detail"] == "The user doesn't have enough privileges" 
 
 
 def test_admin_list_users(client, db_session, auth_headers, test_employee_user):
@@ -78,9 +89,10 @@ def test_admin_list_users(client, db_session, auth_headers, test_employee_user):
     user_logins = {u["login"] for u in users}
     assert admin_obj.login in user_logins
     assert employee_obj.login in user_logins
+    assert all("pessoa" in u and u["pessoa"] is not None for u in users)
 
 
-def test_employee_list_self(client, db_session, auth_headers_employee, test_employee_user): # ADICIONADO: db_session
+def test_employee_list_self(client, db_session, auth_headers_employee, test_employee_user):
     """Funcionário deve listar apenas a si mesmo."""
     employee_obj, _ = test_employee_user
     
@@ -90,9 +102,12 @@ def test_employee_list_self(client, db_session, auth_headers_employee, test_empl
     users = response.json()
     
     assert len(users) == 1
+    assert users[0]["id"] == employee_obj.id
     assert users[0]["login"] == employee_obj.login
     assert users[0]["role"] == employee_obj.role
     assert users[0]["admin_id"] == employee_obj.admin_id
+    assert "pessoa" in users[0]
+    assert users[0]["pessoa"]["id"] == employee_obj.id_pessoa
 
 
 def test_admin_get_employee(client, auth_headers, test_employee_user):
@@ -103,16 +118,20 @@ def test_admin_get_employee(client, auth_headers, test_employee_user):
     
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
+    assert data["id"] == employee_obj.id
     assert data["login"] == employee_obj.login
     assert data["role"] == "funcionario"
     assert data["admin_id"] == employee_obj.admin_id
+    assert "pessoa" in data
+    assert data["pessoa"]["id"] == employee_obj.id_pessoa
+
 
 def test_admin_get_other_admin_forbidden(client, db_session, auth_headers):
     """Admin NÃO deve conseguir obter detalhes de outro admin (não criado por ele)."""
     admin2_password = "admin2_test_pass"
     hashed_password2 = get_password_hash(admin2_password)
 
-    pessoa2 = PessoaDB(nome="Admin Test 2", cpf="000.000.000-02", email="admin2_test@example.com")
+    pessoa2 = PessoaDB(nome="Admin Test 2", cpf="00000000002", email="admin2_test@example.com")
     db_session.add(pessoa2)
     db_session.commit()
     db_session.refresh(pessoa2)
@@ -130,6 +149,8 @@ def test_admin_get_other_admin_forbidden(client, db_session, auth_headers):
 
     response = client.get(f"/api/usuarios/{admin2_user.id}", headers=auth_headers)
     assert response.status_code == status.HTTP_403_FORBIDDEN
+    assert "detail" in response.json()
+    assert response.json()["detail"] == "Não autorizado a ver outro administrador."
 
 def test_employee_get_self(client, auth_headers_employee, test_employee_user):
     """Funcionário deve conseguir obter seus próprios detalhes."""
@@ -139,7 +160,11 @@ def test_employee_get_self(client, auth_headers_employee, test_employee_user):
     
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
+    assert data["id"] == employee_obj.id
     assert data["login"] == employee_obj.login
+    assert data["role"] == "funcionario"
+    assert "pessoa" in data
+
 
 def test_employee_get_other_user_forbidden(client, auth_headers_employee, test_admin_user):
     """Funcionário NÃO deve conseguir obter detalhes de outro usuário (nem mesmo seu admin diretamente por ID)."""
@@ -147,17 +172,28 @@ def test_employee_get_other_user_forbidden(client, auth_headers_employee, test_a
     
     response = client.get(f"/api/usuarios/{admin_obj.id}", headers=auth_headers_employee)
     assert response.status_code == status.HTTP_403_FORBIDDEN
+    assert "detail" in response.json()
+    assert response.json()["detail"] == "Não autorizado a ver este usuário"
 
 
 def test_admin_update_employee(client, db_session, auth_headers, test_employee_user):
     """Admin deve conseguir atualizar dados de seu funcionário."""
     employee_obj, _ = test_employee_user
     updated_login = "updated_employee_login"
-    
+    updated_email = "updated.employee@example.com"
+    updated_name = "Funcionario Atualizado"
+
     update_request_body = {
-        "login": updated_login,
-        "password": "emp_test_pass",
-        "role": "funcionario"
+        "user_data": {
+            "login": updated_login,
+            "password": "emp_test_pass_new", 
+            "role": "funcionario",
+            "admin_id": employee_obj.admin_id
+        },
+        "pessoa_data": {
+            "nome": updated_name,
+            "email": updated_email,
+        }
     }
 
     response = client.put(
@@ -169,20 +205,34 @@ def test_admin_update_employee(client, db_session, auth_headers, test_employee_u
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
     assert data["login"] == updated_login
+    assert data["role"] == "funcionario"
+    assert data["pessoa"]["nome"] == updated_name
+    assert data["pessoa"]["email"] == updated_email
     
     db_session.refresh(employee_obj)
     assert employee_obj.login == updated_login
+    assert employee_obj.pessoa.nome == updated_name
+    assert employee_obj.pessoa.email == updated_email
 
 
-def test_employee_update_self(client, db_session, auth_headers_employee, test_employee_user): # db_session ADICIONADO
+def test_employee_update_self(client, db_session, auth_headers_employee, test_employee_user):
     """Funcionário deve conseguir atualizar seus próprios dados."""
     employee_obj, _ = test_employee_user
     updated_login = "self_updated_employee_login"
-    
+    updated_email_self = "self.updated.employee@example.com"
+    updated_name_self = "Meu Proprio Nome Atualizado"
+
     update_request_body = {
-        "login": updated_login,
-        "password": "emp_test_pass",
-        "role": "funcionario"
+        "user_data": {
+            "login": updated_login,
+            "password": "emp_test_pass_new_self", 
+            "role": "funcionario",
+            "admin_id": employee_obj.admin_id
+        },
+        "pessoa_data": {
+            "nome": updated_name_self,
+            "email": updated_email_self
+        }
     }
 
     response = client.put(
@@ -194,9 +244,13 @@ def test_employee_update_self(client, db_session, auth_headers_employee, test_em
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
     assert data["login"] == updated_login
+    assert data["pessoa"]["nome"] == updated_name_self
+    assert data["pessoa"]["email"] == updated_email_self
 
     db_session.refresh(employee_obj)
     assert employee_obj.login == updated_login
+    assert employee_obj.pessoa.nome == updated_name_self
+    assert employee_obj.pessoa.email == updated_email_self
 
 
 def test_employee_update_other_user_forbidden(client, auth_headers_employee, test_admin_user):
@@ -204,13 +258,19 @@ def test_employee_update_other_user_forbidden(client, auth_headers_employee, tes
     admin_obj, _ = test_admin_user
     
     update_data = {
-        "login": "forbidden_login_attempt",
-        "password": "new_pass",
-        "role": "admin"
+        "user_data": {
+            "login": "forbidden_login_attempt",
+            "password": "new_pass",
+            "role": "admin"
+        },
+        "pessoa_data": {
+            "nome": "Nome Proibido",
+            "email": "forbidden@example.com"
+        }
     }
 
     response = client.put(
-        f"/api/usuarios/{admin_obj.id}", # Tentando atualizar o admin
+        f"/api/usuarios/{admin_obj.id}",
         json=update_data,
         headers=auth_headers_employee
     )
@@ -234,6 +294,7 @@ def test_admin_delete_employee(client, db_session, auth_headers, test_employee_u
     db_deleted_person = db_session.query(PessoaDB).filter(PessoaDB.id == employee_obj.id_pessoa).first()
     assert db_deleted_person is None
 
+
 def test_admin_cannot_delete_self(client, auth_headers, test_admin_user):
     """Admin NÃO deve conseguir deletar a si mesmo."""
     admin_obj, _ = test_admin_user
@@ -243,6 +304,7 @@ def test_admin_cannot_delete_self(client, auth_headers, test_admin_user):
         headers=auth_headers
     )
     assert response.status_code == status.HTTP_403_FORBIDDEN
+
 
 def test_employee_cannot_delete_user(client, auth_headers_employee, test_admin_user):
     """Funcionário NÃO deve conseguir deletar outros usuários (nem mesmo seu admin)."""
