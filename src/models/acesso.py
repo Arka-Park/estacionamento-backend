@@ -2,6 +2,7 @@ from typing import Optional
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import Column, Integer, String, DateTime, Numeric, ForeignKey, Enum
+from sqlalchemy.orm import relationship
 from .base import Base
 
 class AcessoDB(Base):
@@ -16,6 +17,7 @@ class AcessoDB(Base):
     id_estacionamento = Column(Integer, ForeignKey("estacionamento.id"), nullable=False)
     id_evento = Column(Integer, ForeignKey("evento.id"), nullable=True)
     admin_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
+    faturamento = relationship("FaturamentoDB", back_populates="acesso")
 
 
 class AcessoCreate(BaseModel):

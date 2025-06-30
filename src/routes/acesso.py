@@ -9,6 +9,7 @@ from src.database import get_db
 from src.models import acesso as models_acesso
 from src.models import estacionamento as models_estacionamento
 from src.models import evento as models_evento
+from src.models import faturamento as models_faturamento
 from src.models.usuario import UsuarioDB, Usuario
 from src.auth.dependencies import get_current_user
 
@@ -189,6 +190,14 @@ def registrar_saida(
                                    (remaining_hours_after_days - 1) * float(db_estacionamento.valor_demais_horas)
 
     db_acesso.valor_total = round(valor_total, 2)
+    
+    novo_faturamento = models_faturamento.FaturamentoDB(
+        id_acesso=db_acesso.id,
+        valor=db_acesso.valor_total,
+        data_faturamento=datetime.now(timezone.utc)
+    )
+    db.add(novo_faturamento)
+
     db.commit()
     db.refresh(db_acesso)
     return db_acesso

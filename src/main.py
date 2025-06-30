@@ -9,6 +9,7 @@ from src.routes import auth as auth_routes
 from src.routes import evento as evento_routes
 from src.routes import usuario as usuario_routes
 from src.routes import acesso as acesso_routes
+from src.routes import dashboard as dashboard_routes
 
 # pylint: disable=redefined-outer-name,unused-argument
 
@@ -61,6 +62,7 @@ app.include_router(estacionamento_routes.router, prefix="/api")
 app.include_router(evento_routes.router, prefix="/api")
 app.include_router(usuario_routes.router, prefix="/api")
 app.include_router(acesso_routes.router, prefix="/api")
+app.include_router(dashboard_routes.router, prefix="/api")
 
 @app.get("/health", tags=["Health Check"])
 def health_check():
