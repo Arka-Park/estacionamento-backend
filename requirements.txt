@@ -11,3 +11,5 @@ pwdlib[argon2]
 python-jose[cryptography]
 python-multipart
 pydantic[email]
+tzdata
+pytest-mock

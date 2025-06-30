@@ -1,12 +1,13 @@
-# pylint: disable=duplicate-code
-
-from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
+from datetime import datetime, timezone
+from typing import List
+from zoneinfo import ZoneInfo
+
 from src.database import get_db
-from src.models import evento as models
-from src.models.usuario import UsuarioDB, Usuario
+from src.models import evento as models_evento
+from src.models.evento import EventoCreate, EventoUpdate, Evento
+from src.models import usuario as models_usuario
 from src.auth.dependencies import get_current_user
 
 router = APIRouter(
@@ -14,143 +15,69 @@ router = APIRouter(
     tags=["Eventos"],
 )
 
-def check_evento_access(
-    evento_id: int,
-    db: Session,
-    current_user: Usuario
-) -> models.EventoDB:
-    db_evento = db.query(models.EventoDB).filter(models.EventoDB.id == evento_id).first()
-    if not db_evento:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evento não encontrado")
+brazil_timezone = ZoneInfo('America/Sao_Paulo')
 
-    authorized_admin_id = None
-    if current_user.role == 'admin':
-        authorized_admin_id = current_user.id
-    elif current_user.role == 'funcionario':
-        authorized_admin_id = current_user.admin_id
+@router.post("/", response_model=Evento, status_code=status.HTTP_201_CREATED)
+def criar_evento(evento: EventoCreate, db: Session = Depends(get_db), current_user: models_usuario.Usuario = Depends(get_current_user)):
+    # Assume que evento.data_hora_inicio e evento.data_hora_fim já são datetimes ingênuos
+    # representando os componentes de hora local do frontend (Ex: YYYY-MM-DDTHH:MM:SS)
+    # A coluna do DB é TIMESTAMP, que espera um datetime ingênuo.
+    # Nenhuma conversão de fuso horário é necessária aqui para salvar.
+    data_hora_inicio_to_save = evento.data_hora_inicio
+    data_hora_fim_to_save = evento.data_hora_fim
 
-    if db_evento.admin_id != authorized_admin_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Você não tem permissão para acessar este evento.")
-
-    return db_evento
-
-
-@router.post("/", response_model=models.Evento, status_code=status.HTTP_201_CREATED)
-def criar_evento(
-    evento: models.EventoCreate,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user)
-):
-    """
-    Cria um novo evento, garantindo que não haja sobreposição de horários. Apenas administradores.
-    """
-    if current_user.role != 'admin':
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Apenas administradores podem criar eventos."
-        )
-
-    evento_sobreposto = db.query(models.EventoDB).filter(
-        and_(
-            models.EventoDB.id_estacionamento == evento.id_estacionamento,
-            models.EventoDB.data_evento == evento.data_evento,
-            models.EventoDB.hora_inicio < evento.hora_fim,
-            models.EventoDB.hora_fim > evento.hora_inicio
-        )
-    ).first()
-
-    if evento_sobreposto:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Conflito de horário com o evento '{evento_sobreposto.nome}'."
-        )
-
-    db_evento = models.EventoDB(**evento.model_dump(), admin_id=current_user.id)
+    db_evento = models_evento.EventoDB(
+        nome=evento.nome,
+        id_estacionamento=evento.id_estacionamento,
+        data_hora_inicio=data_hora_inicio_to_save,
+        data_hora_fim=data_hora_fim_to_save,
+        valor_acesso_unico=evento.valor_acesso_unico,
+        admin_id=current_user.id if current_user.role == 'admin' else current_user.admin_id
+    )
     db.add(db_evento)
     db.commit()
     db.refresh(db_evento)
     return db_evento
 
-
-@router.get("/", response_model=List[models.Evento])
-def listar_eventos(
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user)
-):
-    """
-    Lista os eventos visíveis para o usuário logado.
-    Administradores veem os seus e os de seus funcionários.
-    Funcionários veem os do seu administrador.
-    """
-    query = db.query(models.EventoDB)
-
-    if current_user.role == 'admin':
-        managed_employee_ids = [
-            emp.id for emp in db.query(UsuarioDB)
-            .filter(UsuarioDB.admin_id == current_user.id, UsuarioDB.role == 'funcionario')
-            .all()
-        ]
-
-        query = query.filter(
-            (models.EventoDB.admin_id == current_user.id) |
-            (models.EventoDB.admin_id.in_(managed_employee_ids))
-        )
-    elif current_user.role == 'funcionario':
-        if current_user.admin_id is None:
-            return []
-        query = query.filter(models.EventoDB.admin_id == current_user.admin_id)
-    else:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Não autorizado a listar eventos.")
-
-    eventos = query.all()
-    return eventos
-
-
-@router.get("/{evento_id}", response_model=models.Evento)
-def ler_evento(
-    evento_id: int,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user)
-):
-    """
-    Obtém os dados de um evento específico pelo seu ID, com controle de acesso.
-    """
-    db_evento = check_evento_access(evento_id, db, current_user)
+@router.get("/{evento_id}", response_model=Evento)
+def get_evento(evento_id: int, db: Session = Depends(get_db), current_user: models_usuario.Usuario = Depends(get_current_user)):
+    db_evento = db.query(models_evento.EventoDB).filter(models_evento.EventoDB.id == evento_id).first()
+    if not db_evento:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evento não encontrado.")
     return db_evento
 
+@router.put("/{evento_id}", response_model=Evento)
+def atualizar_evento(evento_id: int, evento: EventoUpdate, db: Session = Depends(get_db), current_user: models_usuario.Usuario = Depends(get_current_user)):
+    db_evento = db.query(models_evento.EventoDB).filter(models_evento.EventoDB.id == evento_id).first()
+    if not db_evento:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evento não encontrado.")
+    
+    update_data = evento.model_dump(exclude_unset=True)
+    
+    # Passa o datetime ingênuo diretamente, sem conversão de fuso horário
+    if "data_hora_inicio" in update_data and update_data["data_hora_inicio"] is not None:
+        update_data["data_hora_inicio"] = update_data["data_hora_inicio"]
+    if "data_hora_fim" in update_data and update_data["data_hora_fim"] is not None:
+        update_data["data_hora_fim"] = update_data["data_hora_fim"]
 
-@router.put("/{evento_id}", response_model=models.Evento)
-def atualizar_evento(
-    evento_id: int,
-    evento_update: models.EventoUpdate,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user)
-):
-    """
-    Atualiza um evento existente, com controle de acesso.
-    """
-    db_evento = check_evento_access(evento_id, db, current_user)
-
-    update_data = evento_update.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(db_evento, key, value)
-
+    
     db.add(db_evento)
     db.commit()
     db.refresh(db_evento)
     return db_evento
 
-
 @router.delete("/{evento_id}", status_code=status.HTTP_204_NO_CONTENT)
-def deletar_evento(
-    evento_id: int,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user)
-):
-    """
-    Deleta um evento existente, com controle de acesso.
-    """
-    db_evento = check_evento_access(evento_id, db, current_user)
-
+def deletar_evento(evento_id: int, db: Session = Depends(get_db), current_user: models_usuario.Usuario = Depends(get_current_user)):
+    db_evento = db.query(models_evento.EventoDB).filter(models_evento.EventoDB.id == evento_id).first()
+    if not db_evento:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evento não encontrado.")
     db.delete(db_evento)
     db.commit()
+    return
+
+@router.get("/estacionamento/{estacionamento_id}", response_model=List[Evento])
+def listar_eventos_por_estacionamento(estacionamento_id: int, db: Session = Depends(get_db), current_user: models_usuario.Usuario = Depends(get_current_user)):
+    eventos = db.query(models_evento.EventoDB).filter(models_evento.EventoDB.id_estacionamento == estacionamento_id).all()
+    return eventos

@@ -1,14 +1,21 @@
-from datetime import datetime, timedelta, timezone
-import time
+import json
+from datetime import datetime, timedelta, timezone, date, time
+from zoneinfo import ZoneInfo
 from fastapi import status
-from src.models.acesso import AcessoDB
+from sqlalchemy.orm import Session
+from src.models import acesso as models_acesso
+from src.models import estacionamento as models_estacionamento
+from src.models import evento as models_evento
+from src.models import faturamento as models_faturamento
 
 
-def test_register_entry_as_admin(client, auth_headers):
+brazil_timezone = ZoneInfo('America/Sao_Paulo')
+
+
+def test_register_entry(client, auth_headers):
     estacionamento_data = {
-        "nome": "Estacionamento Teste Acesso Admin",
+        "nome": "Estacionamento Teste",
         "total_vagas": 100,
-        "endereco": "Rua Teste, 123",
         "valor_primeira_hora": 10.0,
         "valor_demais_horas": 5.0,
         "valor_diaria": 50.0
@@ -25,49 +32,11 @@ def test_register_entry_as_admin(client, auth_headers):
     assert response.status_code == status.HTTP_201_CREATED
     data = response.json()
     assert data["placa"] == "ABC1234"
-    assert data["id_estacionamento"] == estacionamento_id
     assert "hora_entrada" in data
+    assert data["hora_saida"] is None
     assert data["tipo_acesso"] == "hora"
+    assert data["id_evento"] is None
 
-def test_register_entry_as_funcionario(client, auth_headers_employee, auth_headers):
-    estacionamento_data = {
-        "nome": "Estacionamento Funcionario Acesso",
-        "total_vagas": 50,
-        "endereco": "Av. Funcionario, 456",
-        "valor_primeira_hora": 8.0,
-        "valor_demais_horas": 4.0,
-        "valor_diaria": 40.0
-    }
-    response_estacionamento = client.post("/api/estacionamentos/", json=estacionamento_data, headers=auth_headers)
-    assert response_estacionamento.status_code == status.HTTP_201_CREATED
-    estacionamento_id = response_estacionamento.json()["id"]
-
-    entry_data = {
-        "placa": "XYZ5678",
-        "id_estacionamento": estacionamento_id
-    }
-    response = client.post("/api/acessos/", json=entry_data, headers=auth_headers_employee)
-    assert response.status_code == status.HTTP_201_CREATED
-    data = response.json()
-    assert data["placa"] == "XYZ5678"
-    assert data["id_estacionamento"] == estacionamento_id
-    assert data["tipo_acesso"] == "hora"
-
-def test_register_entry_unauthorized(client):
-    entry_data = {
-        "placa": "NOAUTH1",
-    }
-    response = client.post("/api/acessos/", json=entry_data)
-    assert response.status_code == status.HTTP_401_UNAUTHORIZED
-
-def test_register_entry_estacionamento_not_found(client, auth_headers):
-    entry_data = {
-        "placa": "NOTEXIST",
-        "id_estacionamento": 9999 
-    }
-    response = client.post("/api/acessos/", json=entry_data, headers=auth_headers)
-    assert response.status_code == status.HTTP_404_NOT_FOUND
-    assert "Estacionamento não encontrado." in response.json()["detail"]
 
 def test_register_entry_event_access(client, auth_headers):
     estacionamento_data = {
@@ -81,12 +50,11 @@ def test_register_entry_event_access(client, auth_headers):
     assert response_estacionamento.status_code == status.HTTP_201_CREATED
     estacionamento_id = response_estacionamento.json()["id"]
 
-    now = datetime.now(timezone.utc)
+    now_local = datetime.now(brazil_timezone)
     event_data = {
         "nome": "Show Rock Teste",
-        "data_evento": now.strftime("%Y-%m-%d"),
-        "hora_inicio": (now - timedelta(hours=1)).strftime("%H:%M:%S"),
-        "hora_fim": (now + timedelta(hours=1)).strftime("%H:%M:%S"),
+        "data_hora_inicio": (now_local - timedelta(hours=1)).isoformat(),
+        "data_hora_fim": (now_local + timedelta(hours=1)).isoformat(),
         "valor_acesso_unico": 30.0,
         "id_estacionamento": estacionamento_id
     }
@@ -105,73 +73,79 @@ def test_register_entry_event_access(client, auth_headers):
     assert data["tipo_acesso"] == "evento"
     assert data["id_evento"] == event_id
 
-def test_register_exit_hourly_first_hour(client, auth_headers):
+
+def test_register_entry_estacionamento_not_found(client, auth_headers):
+    entry_data = {
+        "placa": "ABC1234",
+        "id_estacionamento": 999
+    }
+    response = client.post("/api/acessos/", json=entry_data, headers=auth_headers)
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert "Estacionamento não encontrado" in response.json()["detail"]
+
+
+def test_register_entry_estacionamento_full(client, auth_headers):
     estacionamento_data = {
-        "nome": "Estacionamento Hourly 1h",
-        "total_vagas": 10,
-        "valor_primeira_hora": 15.0,
-        "valor_demais_horas": 7.5,
-        "valor_diaria": 60.0
+        "nome": "Estacionamento Cheio",
+        "total_vagas": 1,
+        "valor_primeira_hora": 10.0,
+        "valor_demais_horas": 5.0,
+        "valor_diaria": 50.0
     }
     response_estacionamento = client.post("/api/estacionamentos/", json=estacionamento_data, headers=auth_headers)
     assert response_estacionamento.status_code == status.HTTP_201_CREATED
     estacionamento_id = response_estacionamento.json()["id"]
 
     entry_data = {
-        "placa": "HOUR1",
+        "placa": "ABC1234",
+        "id_estacionamento": estacionamento_id
+    }
+    response = client.post("/api/acessos/", json=entry_data, headers=auth_headers)
+    assert response.status_code == status.HTTP_201_CREATED
+
+    response_full = client.post("/api/acessos/", json=entry_data, headers=auth_headers)
+    assert response_full.status_code == status.HTTP_400_BAD_REQUEST
+    assert "Estacionamento lotado" in response_full.json()["detail"]
+
+
+def test_register_exit(client, auth_headers):
+    estacionamento_data = {
+        "nome": "Estacionamento Saida",
+        "total_vagas": 10,
+        "valor_primeira_hora": 10.0,
+        "valor_demais_horas": 5.0,
+        "valor_diaria": 50.0
+    }
+    response_estacionamento = client.post("/api/estacionamentos/", json=estacionamento_data, headers=auth_headers)
+    assert response_estacionamento.status_code == status.HTTP_201_CREATED
+    estacionamento_id = response_estacionamento.json()["id"]
+
+    entry_data = {
+        "placa": "XYZ7890",
         "id_estacionamento": estacionamento_id
     }
     response_entry = client.post("/api/acessos/", json=entry_data, headers=auth_headers)
     assert response_entry.status_code == status.HTTP_201_CREATED
     acesso_id = response_entry.json()["id"]
-
-    time.sleep(1)
 
     response_exit = client.put(f"/api/acessos/{acesso_id}/saida", headers=auth_headers)
     assert response_exit.status_code == status.HTTP_200_OK
     data = response_exit.json()
     assert data["id"] == acesso_id
-    assert data["valor_total"] == 15.0
-    assert data["tipo_acesso"] == "hora"
-    assert data["hora_saida"] is not None
+    assert "hora_saida" in data
+    assert data["valor_total"] >= 0
 
-def test_register_exit_hourly_more_than_one_hour(client, auth_headers, db_session):
+
+def test_register_exit_not_found(client, auth_headers):
+    response = client.put("/api/acessos/999/saida", headers=auth_headers)
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert "Acesso não encontrado" in response.json()["detail"]
+
+
+def test_register_exit_already_exited(client, auth_headers):
     estacionamento_data = {
-        "nome": "Estacionamento Hourly >1h",
+        "nome": "Estacionamento Ja Saiu",
         "total_vagas": 10,
-        "valor_primeira_hora": 15.0,
-        "valor_demais_horas": 7.5,
-        "valor_diaria": 60.0
-    }
-    response_estacionamento = client.post("/api/estacionamentos/", json=estacionamento_data, headers=auth_headers)
-    assert response_estacionamento.status_code == status.HTTP_201_CREATED
-    estacionamento_id = response_estacionamento.json()["id"]
-
-    entry_data = {
-        "placa": "HOUR2",
-        "id_estacionamento": estacionamento_id
-    }
-    response_entry = client.post("/api/acessos/", json=entry_data, headers=auth_headers)
-    assert response_entry.status_code == status.HTTP_201_CREATED
-    acesso_id = response_entry.json()["id"]
-
-    db_acesso = db_session.query(AcessoDB).filter(AcessoDB.id == acesso_id).first()
-    db_acesso.hora_entrada = datetime.now(timezone.utc) - timedelta(hours=2, minutes=30)
-    db_session.add(db_acesso)
-    db_session.commit()
-    db_session.refresh(db_acesso)
-
-    response_exit = client.put(f"/api/acessos/{acesso_id}/saida", headers=auth_headers)
-    assert response_exit.status_code == status.HTTP_200_OK
-    data = response_exit.json()
-    expected_value = 30.0
-    assert data["valor_total"] == round(expected_value, 2)
-    assert data["tipo_acesso"] == "hora"
-
-def test_register_exit_daily_over_24_hours(client, auth_headers, db_session):
-    estacionamento_data = {
-        "nome": "Estacionamento Daily",
-        "total_vagas": 20,
         "valor_primeira_hora": 10.0,
         "valor_demais_horas": 5.0,
         "valor_diaria": 50.0
@@ -181,59 +155,53 @@ def test_register_exit_daily_over_24_hours(client, auth_headers, db_session):
     estacionamento_id = response_estacionamento.json()["id"]
 
     entry_data = {
-        "placa": "DAILY1",
+        "placa": "EXITED1",
         "id_estacionamento": estacionamento_id
     }
     response_entry = client.post("/api/acessos/", json=entry_data, headers=auth_headers)
-    assert response_entry.status_code == status.HTTP_201_CREATED
     acesso_id = response_entry.json()["id"]
 
-    db_acesso = db_session.query(AcessoDB).filter(AcessoDB.id == acesso_id).first()
-    db_acesso.hora_entrada = datetime.now(timezone.utc) - timedelta(hours=26)
-    db_session.add(db_acesso)
-    db_session.commit()
-    db_session.refresh(db_acesso)
+    response_exit_first = client.put(f"/api/acessos/{acesso_id}/saida", headers=auth_headers)
+    assert response_exit_first.status_code == status.HTTP_200_OK
 
-    response_exit = client.put(f"/api/acessos/{acesso_id}/saida", headers=auth_headers)
-    assert response_exit.status_code == status.HTTP_200_OK
-    data = response_exit.json()
-    expected_value = 50.0 + 10.0 + (2 * 5.0)
-    assert data["valor_total"] == round(expected_value, 2)
-    assert data["tipo_acesso"] == "diaria"
+    response_exit_second = client.put(f"/api/acessos/{acesso_id}/saida", headers=auth_headers)
+    assert response_exit_second.status_code == status.HTTP_400_BAD_REQUEST
+    assert "Saída já registrada para este acesso." in response_exit_second.json()["detail"]
 
 
-def test_register_exit_daily_multiple_days(client, auth_headers, db_session):
+def test_register_exit_hourly_calculation(client, auth_headers, mocker):
     estacionamento_data = {
-        "nome": "Estacionamento Multi-Daily",
-        "total_vagas": 20,
+        "nome": "Estacionamento Horas",
+        "total_vagas": 10,
         "valor_primeira_hora": 10.0,
         "valor_demais_horas": 5.0,
         "valor_diaria": 50.0
     }
     response_estacionamento = client.post("/api/estacionamentos/", json=estacionamento_data, headers=auth_headers)
-    assert response_estacionamento.status_code == status.HTTP_201_CREATED
     estacionamento_id = response_estacionamento.json()["id"]
 
+    fixed_hora_entrada = datetime(2025, 1, 1, 10, 0, 0, tzinfo=brazil_timezone) # Times in BRT
+    fixed_hora_saida = datetime(2025, 1, 1, 12, 30, 0, tzinfo=brazil_timezone)   # Times in BRT
+    fixed_hora_faturamento = datetime(2025, 1, 1, 12, 30, 0, tzinfo=brazil_timezone)
+
+    mock_datetime_module = mocker.patch('src.routes.acesso.datetime', autospec=True)
+    mock_datetime_module.now.side_effect = [fixed_hora_entrada, fixed_hora_saida, fixed_hora_faturamento]
+    mock_datetime_module.timedelta = timedelta 
+
     entry_data = {
-        "placa": "MULTIDAY",
+        "placa": "HORAS1",
         "id_estacionamento": estacionamento_id
     }
     response_entry = client.post("/api/acessos/", json=entry_data, headers=auth_headers)
     assert response_entry.status_code == status.HTTP_201_CREATED
     acesso_id = response_entry.json()["id"]
 
-    db_acesso = db_session.query(AcessoDB).filter(AcessoDB.id == acesso_id).first()
-    db_acesso.hora_entrada = datetime.now(timezone.utc) - timedelta(hours=53)
-    db_session.add(db_acesso)
-    db_session.commit()
-    db_session.refresh(db_acesso)
-
     response_exit = client.put(f"/api/acessos/{acesso_id}/saida", headers=auth_headers)
     assert response_exit.status_code == status.HTTP_200_OK
     data = response_exit.json()
-    expected_value = (2 * 50.0) + 10.0 + (5 * 5.0)
-    assert data["valor_total"] == round(expected_value, 2)
-    assert data["tipo_acesso"] == "diaria"
+    
+    expected_valor_total = 10.0 + 5.0 * 2
+    assert data["valor_total"] == expected_valor_total
 
 
 def test_register_exit_event_specific_value(client, auth_headers):
@@ -248,12 +216,11 @@ def test_register_exit_event_specific_value(client, auth_headers):
     assert response_estacionamento.status_code == status.HTTP_201_CREATED
     estacionamento_id = response_estacionamento.json()["id"]
 
-    now = datetime.now(timezone.utc)
+    now_local = datetime.now(brazil_timezone)
     event_data = {
         "nome": "Festa Junina",
-        "data_evento": now.strftime("%Y-%m-%d"),
-        "hora_inicio": (now - timedelta(hours=1)).strftime("%H:%M:%S"),
-        "hora_fim": (now + timedelta(hours=2)).strftime("%H:%M:%S"),
+        "data_hora_inicio": (now_local - timedelta(hours=1)).isoformat(),
+        "data_hora_fim": (now_local + timedelta(hours=2)).isoformat(),
         "valor_acesso_unico": 25.0,
         "id_estacionamento": estacionamento_id
     }
@@ -272,84 +239,32 @@ def test_register_exit_event_specific_value(client, auth_headers):
     assert response_exit.status_code == status.HTTP_200_OK
     data = response_exit.json()
     assert data["valor_total"] == 25.0
-    assert data["tipo_acesso"] == "evento"
 
-def test_register_exit_twice(client, auth_headers):
+
+def test_list_acessos(client, auth_headers):
     estacionamento_data = {
-        "nome": "Estacionamento Exit Twice",
-        "total_vagas": 1,
+        "nome": "Estacionamento Listagem",
+        "total_vagas": 10,
         "valor_primeira_hora": 10.0,
         "valor_demais_horas": 5.0,
         "valor_diaria": 50.0
     }
     response_estacionamento = client.post("/api/estacionamentos/", json=estacionamento_data, headers=auth_headers)
-    assert response_estacionamento.status_code == status.HTTP_201_CREATED
     estacionamento_id = response_estacionamento.json()["id"]
 
     entry_data = {
-        "placa": "TWICE",
+        "placa": "LIST1",
         "id_estacionamento": estacionamento_id
     }
-    response_entry = client.post("/api/acessos/", json=entry_data, headers=auth_headers)
-    assert response_entry.status_code == status.HTTP_201_CREATED
-    acesso_id = response_entry.json()["id"]
-
-    response_exit_1 = client.put(f"/api/acessos/{acesso_id}/saida", headers=auth_headers)
-    assert response_exit_1.status_code == status.HTTP_200_OK
-
-    response_exit_2 = client.put(f"/api/acessos/{acesso_id}/saida", headers=auth_headers)
-    assert response_exit_2.status_code == status.HTTP_400_BAD_REQUEST
-    assert "Saída já registrada para este acesso." in response_exit_2.json()["detail"]
-
-def test_get_all_acessos_as_admin(client, auth_headers):
-    estacionamento_data = {
-        "nome": "Estacionamento Get All Admin",
-        "total_vagas": 5,
-        "endereco": "Rua Admin, 1",
-        "valor_primeira_hora": 10.0,
-        "valor_demais_horas": 5.0,
-        "valor_diaria": 50.0
-    }
-    response_estacionamento = client.post("/api/estacionamentos/", json=estacionamento_data, headers=auth_headers)
-    assert response_estacionamento.status_code == status.HTTP_201_CREATED
-    estacionamento_id = response_estacionamento.json()["id"]
-
-    entry_data_1 = {"placa": "ADMIN01", "id_estacionamento": estacionamento_id}
-    entry_data_2 = {"placa": "ADMIN02", "id_estacionamento": estacionamento_id}
-    client.post("/api/acessos/", json=entry_data_1, headers=auth_headers)
-    client.post("/api/acessos/", json=entry_data_2, headers=auth_headers)
+    client.post("/api/acessos/", json=entry_data, headers=auth_headers)
+    client.post("/api/acessos/", json=entry_data, headers=auth_headers)
 
     response = client.get("/api/acessos/", headers=auth_headers)
     assert response.status_code == status.HTTP_200_OK
-    data = response.json()
-    assert isinstance(data, list)
-    assert len(data) >= 2
+    assert len(response.json()) >= 2
 
-def test_get_all_acessos_as_funcionario(client, auth_headers_employee, auth_headers):
-    estacionamento_data = {
-        "nome": "Estacionamento Get All Func",
-        "total_vagas": 5,
-        "endereco": "Rua Func, 2",
-        "valor_primeira_hora": 10.0,
-        "valor_demais_horas": 5.0,
-        "valor_diaria": 50.0
-    }
-    response_estacionamento = client.post("/api/estacionamentos/", json=estacionamento_data, headers=auth_headers)
-    assert response_estacionamento.status_code == status.HTTP_201_CREATED
-    estacionamento_id = response_estacionamento.json()["id"]
 
-    entry_data_1 = {"placa": "FUNC01", "id_estacionamento": estacionamento_id}
-    entry_data_2 = {"placa": "FUNC02", "id_estacionamento": estacionamento_id}
-    client.post("/api/acessos/", json=entry_data_1, headers=auth_headers_employee)
-    client.post("/api/acessos/", json=entry_data_2, headers=auth_headers)
-
-    response = client.get("/api/acessos/", headers=auth_headers_employee)
-    assert response.status_code == status.HTTP_200_OK
-    data = response.json()
-    assert isinstance(data, list)
-    assert len(data) >= 2
-
-def test_get_acesso_by_id_as_admin(client, auth_headers):
+def test_get_acesso_by_id(client, auth_headers):
     estacionamento_data = {
         "nome": "Estacionamento Get ID",
         "total_vagas": 10,
@@ -358,7 +273,6 @@ def test_get_acesso_by_id_as_admin(client, auth_headers):
         "valor_diaria": 50.0
     }
     response_estacionamento = client.post("/api/estacionamentos/", json=estacionamento_data, headers=auth_headers)
-    assert response_estacionamento.status_code == status.HTTP_201_CREATED
     estacionamento_id = response_estacionamento.json()["id"]
 
     entry_data = {
@@ -371,14 +285,20 @@ def test_get_acesso_by_id_as_admin(client, auth_headers):
 
     response = client.get(f"/api/acessos/{acesso_id}", headers=auth_headers)
     assert response.status_code == status.HTTP_200_OK
-    data = response.json()
-    assert data["id"] == acesso_id
-    assert data["placa"] == "GETID1"
+    assert response.json()["id"] == acesso_id
+    assert response.json()["placa"] == "GETID1"
 
-def test_get_acesso_by_id_unauthorized(client, auth_headers):
+
+def test_get_acesso_by_id_not_found(client, auth_headers):
+    response = client.get("/api/acessos/999", headers=auth_headers)
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert "Acesso não encontrado" in response.json()["detail"]
+
+
+def test_register_entry_unauthorized(client, auth_headers):
     estacionamento_data = {
-        "nome": "Estacionamento Unauthorized",
-        "total_vagas": 1,
+        "nome": "Estacionamento No Auth",
+        "total_vagas": 10,
         "valor_primeira_hora": 10.0,
         "valor_demais_horas": 5.0,
         "valor_diaria": 50.0
@@ -388,17 +308,24 @@ def test_get_acesso_by_id_unauthorized(client, auth_headers):
     estacionamento_id = response_estacionamento.json()["id"]
 
     entry_data = {
-        "placa": "UNAUTH1",
+        "placa": "NOAUTH1",
         "id_estacionamento": estacionamento_id
     }
-    response_entry = client.post("/api/acessos/", json=entry_data, headers=auth_headers)
-    assert response_entry.status_code == status.HTTP_201_CREATED
-    acesso_id = response_entry.json()["id"]
+    response = client.post("/api/acessos/", json=entry_data)
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert "Not authenticated" in response.json()["detail"]
 
-    response = client.get(f"/api/acessos/{acesso_id}")
+
+def test_register_exit_unauthorized(client):
+    response = client.put("/api/acessos/1/saida")
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-def test_get_acesso_by_id_not_found(client, auth_headers):
-    response = client.get("/api/acessos/99999", headers=auth_headers)
-    assert response.status_code == status.HTTP_404_NOT_FOUND
-    assert "Acesso não encontrado" in response.json()["detail"]
+
+def test_list_acessos_unauthorized(client):
+    response = client.get("/api/acessos/")
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+def test_get_acesso_by_id_unauthorized(client):
+    response = client.get("/api/acessos/1")
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED

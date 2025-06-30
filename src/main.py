@@ -11,8 +11,6 @@ from src.routes import usuario as usuario_routes
 from src.routes import acesso as acesso_routes
 from src.routes import dashboard as dashboard_routes
 
-# pylint: disable=redefined-outer-name,unused-argument
-
 MAX_RETRIES = 5
 RETRY_DELAY = 5
 
@@ -24,6 +22,7 @@ async def lifespan(app: FastAPI):
         try:
             with src.database.engine.connect():
                 print("Conexão com o banco de dados estabelecida com sucesso!")
+                src.database.Base.metadata.create_all(bind=src.database.engine)
                 break
         except OperationalError as e:
             print(f"Erro ao conectar ao banco de dados: {e}")
@@ -66,7 +65,4 @@ app.include_router(dashboard_routes.router, prefix="/api")
 
 @app.get("/health", tags=["Health Check"])
 def health_check():
-    """
-    Verifica se a aplicação está operacional.
-    """
     return {"status": "ok"}

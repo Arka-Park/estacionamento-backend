@@ -10,7 +10,14 @@ from src.main import app
 from src.database import get_db
 from src.models.base import Base
 from src.models.usuario import UsuarioDB, PessoaDB
-from src.security import get_password_hash
+from src.security import get_password_hash, create_access_token
+from datetime import timedelta
+
+# Importar modelos para limpeza explícita
+from src.models import acesso as models_acesso
+from src.models import estacionamento as models_estacionamento
+from src.models import evento as models_evento
+from src.models import faturamento as models_faturamento
 
 
 os.environ["TESTING"] = "True"
@@ -41,8 +48,20 @@ def db_session_fixture():
     try:
         yield db
     finally:
+        # Limpeza explícita das tabelas para garantir isolamento total
+        # entre os testes, mesmo com rollback.
+        # Isso é uma medida mais agressiva para casos onde o rollback
+        # não é suficiente para visibilidade imediata em TestClient.
+        db.query(models_acesso.AcessoDB).delete()
+        db.query(models_estacionamento.EstacionamentoDB).delete()
+        db.query(models_evento.EventoDB).delete()
+        db.query(models_faturamento.FaturamentoDB).delete()
+        db.query(UsuarioDB).delete()
+        db.query(PessoaDB).delete()
+        db.commit() # Commit das deleções para garantir que sejam aplicadas antes do rollback
+        
         db.close()
-        transaction.rollback()
+        transaction.rollback() # Reverte a transação da fixture
         connection.close()
 
 

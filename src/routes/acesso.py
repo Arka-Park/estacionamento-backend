@@ -1,12 +1,14 @@
 # pylint: disable=too-many-arguments,line-too-long,too-many-locals, duplicate-code
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
+from zoneinfo import ZoneInfo
+
 from src.database import get_db
-from src.models import acesso as models_acesso
+import src.models.acesso
 from src.models import estacionamento as models_estacionamento
 from src.models import evento as models_evento
 from src.models import faturamento as models_faturamento
@@ -18,12 +20,14 @@ router = APIRouter(
     tags=["Acessos"],
 )
 
+brazil_timezone = ZoneInfo('America/Sao_Paulo')
+
 def check_acesso_access(
     acesso_id: int,
     db: Session,
     current_user: Usuario
-) -> models_acesso.AcessoDB:
-    db_acesso = db.query(models_acesso.AcessoDB).filter(models_acesso.AcessoDB.id == acesso_id).first()
+) -> src.models.acesso.AcessoDB:
+    db_acesso = db.query(src.models.acesso.AcessoDB).filter(src.models.acesso.AcessoDB.id == acesso_id).first()
     if not db_acesso:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Acesso não encontrado")
 
@@ -39,16 +43,12 @@ def check_acesso_access(
     return db_acesso
 
 
-@router.post("/", response_model=models_acesso.Acesso, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=src.models.acesso.Acesso, status_code=status.HTTP_201_CREATED)
 def registrar_entrada(
-    acesso_data: models_acesso.AcessoCreate,
+    acesso_data: src.models.acesso.AcessoCreate,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
-    """
-    Registra a entrada de um veículo no estacionamento.
-    Verifica eventos e atribui tipo de acesso automaticamente.
-    """
     if current_user.role not in ['admin', 'funcionario']:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Você não tem permissão para registrar acessos.")
 
@@ -62,16 +62,23 @@ def registrar_entrada(
     if db_estacionamento.admin_id != authorized_admin_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Você não tem permissão para registrar acessos neste estacionamento.")
 
-    hora_entrada = datetime.now(timezone.utc)
-    today_date = hora_entrada.date()
-    current_time = hora_entrada.time()
+    db.expire_all() 
+
+    vagas_ocupadas = db.query(src.models.acesso.AcessoDB).filter(
+        src.models.acesso.AcessoDB.id_estacionamento == acesso_data.id_estacionamento,
+        src.models.acesso.AcessoDB.hora_saida.is_(None)
+    ).count()
+
+    if vagas_ocupadas >= db_estacionamento.total_vagas:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Estacionamento lotado.")
+
+    hora_entrada_local_naive = datetime.now(brazil_timezone).replace(tzinfo=None)
 
     active_event = db.query(models_evento.EventoDB).filter(
         and_(
             models_evento.EventoDB.id_estacionamento == acesso_data.id_estacionamento,
-            models_evento.EventoDB.data_evento == today_date,
-            models_evento.EventoDB.hora_inicio <= current_time,
-            models_evento.EventoDB.hora_fim >= current_time,
+            models_evento.EventoDB.data_hora_inicio <= hora_entrada_local_naive, # Removido .replace(tzinfo=None)
+            models_evento.EventoDB.data_hora_fim >= hora_entrada_local_naive,     # Removido .replace(tzinfo=None)
             models_evento.EventoDB.admin_id == authorized_admin_id
         )
     ).first()
@@ -82,9 +89,9 @@ def registrar_entrada(
         tipo_acesso = 'evento'
         id_evento = active_event.id
 
-    db_acesso = models_acesso.AcessoDB(
+    db_acesso = src.models.acesso.AcessoDB(
         **acesso_data.model_dump(),
-        hora_entrada=hora_entrada,
+        hora_entrada=hora_entrada_local_naive,
         tipo_acesso=tipo_acesso,
         id_evento=id_evento,
         admin_id=authorized_admin_id
@@ -95,15 +102,12 @@ def registrar_entrada(
     return db_acesso
 
 
-@router.api_route("/{acesso_id}/saida", methods=["PUT", "OPTIONS"], response_model=models_acesso.Acesso)
+@router.api_route("/{acesso_id}/saida", methods=["PUT", "OPTIONS"], response_model=src.models.acesso.Acesso)
 def registrar_saida(
     acesso_id: int,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
-    """
-    Registra a saída de um veículo e calcula o valor total.
-    """
     if current_user.role not in ['admin', 'funcionario']:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -118,7 +122,10 @@ def registrar_saida(
             detail="Saída já registrada para este acesso."
         )
 
-    db_acesso.hora_saida = datetime.now(timezone.utc)
+    if db_acesso.hora_entrada.tzinfo is not None:
+        db_acesso.hora_entrada = db_acesso.hora_entrada.replace(tzinfo=None)
+
+    db_acesso.hora_saida = datetime.now(brazil_timezone).replace(tzinfo=None)
 
     db_estacionamento = db.query(models_estacionamento.EstacionamentoDB).filter(
         models_estacionamento.EstacionamentoDB.id == db_acesso.id_estacionamento
@@ -130,9 +137,6 @@ def registrar_saida(
         )
 
     valor_total = 0.0
-
-    if db_acesso.hora_entrada.tzinfo is None:
-        db_acesso.hora_entrada = db_acesso.hora_entrada.replace(tzinfo=timezone.utc)
 
     if db_acesso.tipo_acesso == 'evento' and db_acesso.id_evento:
         db_evento = db.query(models_evento.EventoDB).filter(models_evento.EventoDB.id == db_acesso.id_evento).first()
@@ -169,7 +173,7 @@ def registrar_saida(
                 valor_total = float(db_estacionamento.valor_primeira_hora)
                 if hours_to_charge > 1:
                     valor_total += (hours_to_charge - 1) * float(db_estacionamento.valor_demais_horas)
-        else: # Cobrança por diária
+        else:
             db_acesso.tipo_acesso = 'diaria'
 
             total_seconds_parked = time_parked.total_seconds()
@@ -194,7 +198,7 @@ def registrar_saida(
     novo_faturamento = models_faturamento.FaturamentoDB(
         id_acesso=db_acesso.id,
         valor=db_acesso.valor_total,
-        data_faturamento=datetime.now(timezone.utc)
+        data_faturamento=datetime.now(brazil_timezone).replace(tzinfo=None)
     )
     db.add(novo_faturamento)
 
@@ -203,17 +207,12 @@ def registrar_saida(
     return db_acesso
 
 
-@router.get("/", response_model=List[models_acesso.Acesso])
+@router.get("/", response_model=List[src.models.acesso.Acesso])
 def listar_acessos(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
-    """
-    Lista os acessos visíveis para o usuário logado.
-    Administradores veem os seus e os de seus funcionários.
-    Funcionários veem os do seu administrador.
-    """
-    query = db.query(models_acesso.AcessoDB)
+    query = db.query(src.models.acesso.AcessoDB)
 
     if current_user.role == 'admin':
         managed_employee_ids = [
@@ -222,27 +221,25 @@ def listar_acessos(
             .all()
         ]
         query = query.filter(
-            (models_acesso.AcessoDB.admin_id == current_user.id) |
-            (models_acesso.AcessoDB.admin_id.in_(managed_employee_ids))
+            (src.models.acesso.AcessoDB.admin_id == current_user.id) |
+            (src.models.acesso.AcessoDB.admin_id.in_(managed_employee_ids))
         )
     elif current_user.role == 'funcionario':
         if current_user.admin_id is None:
             return []
-        query = query.filter(models_acesso.AcessoDB.admin_id == current_user.admin_id)
+        query = query.filter(src.models.acesso.AcessoDB.admin_id == current_user.admin_id)
     else:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Não autorizado a listar acessos.")
 
-    acessos = query.order_by(models_acesso.AcessoDB.id).all()
+    acessos = query.order_by(src.models.acesso.AcessoDB.id).all()
     return acessos
 
-@router.get("/{acesso_id}", response_model=models_acesso.Acesso)
+
+@router.get("/{acesso_id}", response_model=src.models.acesso.Acesso)
 def obter_acesso(
     acesso_id: int,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
-    """
-    Obtém um acesso específico pelo ID, com controle de acesso.
-    """
     db_acesso = check_acesso_access(acesso_id, db, current_user)
     return db_acesso
