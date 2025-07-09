@@ -1,11 +1,11 @@
 # pylint: disable=too-many-arguments,line-too-long,too-many-locals, duplicate-code
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
-from zoneinfo import ZoneInfo
 
 from src.database import get_db
 import src.models.acesso
@@ -62,7 +62,7 @@ def registrar_entrada(
     if db_estacionamento.admin_id != authorized_admin_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Você não tem permissão para registrar acessos neste estacionamento.")
 
-    db.expire_all() 
+    db.expire_all()
 
     vagas_ocupadas = db.query(src.models.acesso.AcessoDB).filter(
         src.models.acesso.AcessoDB.id_estacionamento == acesso_data.id_estacionamento,
@@ -77,8 +77,8 @@ def registrar_entrada(
     active_event = db.query(models_evento.EventoDB).filter(
         and_(
             models_evento.EventoDB.id_estacionamento == acesso_data.id_estacionamento,
-            models_evento.EventoDB.data_hora_inicio <= hora_entrada_local_naive, # Removido .replace(tzinfo=None)
-            models_evento.EventoDB.data_hora_fim >= hora_entrada_local_naive,     # Removido .replace(tzinfo=None)
+            models_evento.EventoDB.data_hora_inicio <= hora_entrada_local_naive,
+            models_evento.EventoDB.data_hora_fim >= hora_entrada_local_naive,
             models_evento.EventoDB.admin_id == authorized_admin_id
         )
     ).first()
@@ -194,7 +194,7 @@ def registrar_saida(
                                    (remaining_hours_after_days - 1) * float(db_estacionamento.valor_demais_horas)
 
     db_acesso.valor_total = round(valor_total, 2)
-    
+
     novo_faturamento = models_faturamento.FaturamentoDB(
         id_acesso=db_acesso.id,
         valor=db_acesso.valor_total,

@@ -64,6 +64,7 @@ pip install -r requirements.txt
 Crie um arquivo `.env` na raiz do projeto e adicione a URL de conexão do seu banco de dados local.
 
 **.env**
+
 ```env
 DATABASE_URL=postgresql://seu_usuario:sua_senha@localhost:5432/seu_banco
 ```

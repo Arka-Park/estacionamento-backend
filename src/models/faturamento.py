@@ -1,6 +1,6 @@
+from datetime import datetime, UTC
 from sqlalchemy import Column, Integer, Float, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
-from datetime import datetime, UTC
 from .base import Base
 
 class FaturamentoDB(Base):

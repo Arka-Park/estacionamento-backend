@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import OperationalError
 import src.database
+from src.models.base import Base
 from src.routes import estacionamento as estacionamento_routes
 from src.routes import auth as auth_routes
 from src.routes import evento as evento_routes
@@ -15,14 +16,14 @@ MAX_RETRIES = 5
 RETRY_DELAY = 5
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(_app: FastAPI):
     print("Iniciando a aplicação...")
 
     for attempt in range(MAX_RETRIES):
         try:
             with src.database.engine.connect():
                 print("Conexão com o banco de dados estabelecida com sucesso!")
-                src.database.Base.metadata.create_all(bind=src.database.engine)
+                Base.metadata.create_all(bind=src.database.engine)
                 break
         except OperationalError as e:
             print(f"Erro ao conectar ao banco de dados: {e}")

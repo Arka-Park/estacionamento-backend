@@ -1,16 +1,14 @@
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_, cast, Date, extract, union_all, literal_column
-from datetime import datetime, timedelta, date, time, timezone
-from typing import List, Dict, Union
-from zoneinfo import ZoneInfo
-
+from sqlalchemy import func, and_, cast, Date
 from src.database import get_db
 from src.models import acesso as models_acesso
 from src.models import estacionamento as models_estacionamento
 from src.models import faturamento as models_faturamento
 from src.models.dashboard import OcupacaoHoraData, VisaoGeralMetrics, VisaoGeralResponse
-from src.models.usuario import UsuarioDB, Usuario
+from src.models.usuario import Usuario
 from src.auth.dependencies import get_current_user
 
 router = APIRouter(
@@ -44,7 +42,7 @@ def get_visao_geral_data(
         models_acesso.AcessoDB.id_estacionamento == estacionamento_id,
         models_acesso.AcessoDB.hora_saida.is_(None)
     ).count()
-    
+
     total_vagas = db_estacionamento.total_vagas
 
     entradas_hoje = db.query(models_acesso.AcessoDB).filter(
@@ -77,11 +75,11 @@ def get_visao_geral_data(
 
     ocupacao_hoje_delta = entradas_hoje - saidas_hoje
     ocupacao_ontem_delta = entradas_ontem - saidas_ontem
-    
+
     porcentagem_ocupacao = 0.0
     if ocupacao_ontem_delta != 0:
         porcentagem_ocupacao = ((ocupacao_hoje_delta - ocupacao_ontem_delta) / abs(ocupacao_ontem_delta)) * 100
-    
+
     acessos_por_hora_dict = {i: 0 for i in range(24)}
 
     acessos_hoje_local_range = db.query(models_acesso.AcessoDB).filter(

@@ -1,17 +1,19 @@
 # pylint: disable=redefined-outer-name,too-many-arguments,unused-import
 
 import os
+from datetime import timedelta
+
 import pytest
 from starlette.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from _pytest.monkeypatch import MonkeyPatch
+
 from src.main import app
 from src.database import get_db
 from src.models.base import Base
 from src.models.usuario import UsuarioDB, PessoaDB
 from src.security import get_password_hash, create_access_token
-from datetime import timedelta
 
 # Importar modelos para limpeza explícita
 from src.models import acesso as models_acesso
@@ -48,20 +50,16 @@ def db_session_fixture():
     try:
         yield db
     finally:
-        # Limpeza explícita das tabelas para garantir isolamento total
-        # entre os testes, mesmo com rollback.
-        # Isso é uma medida mais agressiva para casos onde o rollback
-        # não é suficiente para visibilidade imediata em TestClient.
         db.query(models_acesso.AcessoDB).delete()
         db.query(models_estacionamento.EstacionamentoDB).delete()
         db.query(models_evento.EventoDB).delete()
         db.query(models_faturamento.FaturamentoDB).delete()
         db.query(UsuarioDB).delete()
         db.query(PessoaDB).delete()
-        db.commit() # Commit das deleções para garantir que sejam aplicadas antes do rollback
-        
+        db.commit()  # Commit das deleções para garantir que sejam aplicadas antes do rollback
+
         db.close()
-        transaction.rollback() # Reverte a transação da fixture
+        transaction.rollback()  # Reverte a transação da fixture
         connection.close()
 
 
@@ -99,6 +97,7 @@ def create_test_admin_user(db_session):
     db_session.refresh(admin_user)
     return admin_user, admin_password
 
+
 @pytest.fixture(name="test_employee_user", scope="function")
 def create_test_employee_user(db_session, test_admin_user):
     admin_obj, _ = test_admin_user
@@ -114,6 +113,7 @@ def create_test_employee_user(db_session, test_admin_user):
     db_session.refresh(employee_user)
     return employee_user, employee_password
 
+
 @pytest.fixture(name="auth_headers", scope="function")
 def get_auth_headers(client, test_admin_user):
     admin_obj, admin_password = test_admin_user
@@ -127,6 +127,7 @@ def get_auth_headers(client, test_admin_user):
     access_token = token_data['access_token']
     headers = {"Authorization": f"Bearer {access_token}"}
     return headers
+
 
 @pytest.fixture(name="auth_headers_employee", scope="function")
 def get_auth_headers_employee(client, test_employee_user):

@@ -1,12 +1,6 @@
-import json
-from datetime import datetime, timedelta, timezone, date, time
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from fastapi import status
-from sqlalchemy.orm import Session
-from src.models import acesso as models_acesso
-from src.models import estacionamento as models_estacionamento
-from src.models import evento as models_evento
-from src.models import faturamento as models_faturamento
 
 
 brazil_timezone = ZoneInfo('America/Sao_Paulo')
@@ -170,6 +164,7 @@ def test_register_exit_already_exited(client, auth_headers):
 
 
 def test_register_exit_hourly_calculation(client, auth_headers, mocker):
+    # Create parking lot
     estacionamento_data = {
         "nome": "Estacionamento Horas",
         "total_vagas": 10,
@@ -180,14 +175,18 @@ def test_register_exit_hourly_calculation(client, auth_headers, mocker):
     response_estacionamento = client.post("/api/estacionamentos/", json=estacionamento_data, headers=auth_headers)
     estacionamento_id = response_estacionamento.json()["id"]
 
-    fixed_hora_entrada = datetime(2025, 1, 1, 10, 0, 0, tzinfo=brazil_timezone) # Times in BRT
-    fixed_hora_saida = datetime(2025, 1, 1, 12, 30, 0, tzinfo=brazil_timezone)   # Times in BRT
-    fixed_hora_faturamento = datetime(2025, 1, 1, 12, 30, 0, tzinfo=brazil_timezone)
+    # Setup mock times in a dictionary
+    fixed_times = {
+        "entrada": datetime(2025, 1, 1, 10, 0, 0, tzinfo=brazil_timezone),
+        "saida": datetime(2025, 1, 1, 12, 30, 0, tzinfo=brazil_timezone),
+        "faturamento": datetime(2025, 1, 1, 12, 30, 0, tzinfo=brazil_timezone)
+    }
 
     mock_datetime_module = mocker.patch('src.routes.acesso.datetime', autospec=True)
-    mock_datetime_module.now.side_effect = [fixed_hora_entrada, fixed_hora_saida, fixed_hora_faturamento]
-    mock_datetime_module.timedelta = timedelta 
+    mock_datetime_module.now.side_effect = [fixed_times["entrada"], fixed_times["saida"], fixed_times["faturamento"]]
+    mock_datetime_module.timedelta = timedelta
 
+    # Register entry
     entry_data = {
         "placa": "HORAS1",
         "id_estacionamento": estacionamento_id
@@ -196,10 +195,11 @@ def test_register_exit_hourly_calculation(client, auth_headers, mocker):
     assert response_entry.status_code == status.HTTP_201_CREATED
     acesso_id = response_entry.json()["id"]
 
+    # Register exit and check calculation
     response_exit = client.put(f"/api/acessos/{acesso_id}/saida", headers=auth_headers)
     assert response_exit.status_code == status.HTTP_200_OK
     data = response_exit.json()
-    
+
     expected_valor_total = 10.0 + 5.0 * 2
     assert data["valor_total"] == expected_valor_total
 

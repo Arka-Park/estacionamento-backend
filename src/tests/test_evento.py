@@ -1,11 +1,6 @@
 from datetime import datetime, timedelta, timezone
-from fastapi import status
-from sqlalchemy.orm import Session
-from src.models import evento as models_evento
-from src.models import estacionamento as models_estacionamento
-from src.models.usuario import UsuarioDB
-from src.auth.dependencies import get_current_user
 from zoneinfo import ZoneInfo
+from fastapi import status
 
 brazil_timezone = ZoneInfo('America/Sao_Paulo')
 
@@ -19,7 +14,7 @@ def test_criar_evento(client, auth_headers):
         "nome": "Estacionamento Teste Evento",
         "total_vagas": 100, "valor_primeira_hora": 10.0, "valor_demais_horas": 5.0, "valor_diaria": 50.0
     })
-    
+
     now_local = datetime.now(brazil_timezone)
     response = client.post(
         "/api/eventos/",
@@ -100,23 +95,10 @@ def test_atualizar_evento(client, auth_headers):
     data = response.json()
     assert data["nome"] == "Evento Editado"
     assert data["valor_acesso_unico"] == 25.0
-    
-    # Converta ambos os datetimes para UTC para uma comparação robusta
-    # now_local é um datetime.datetime com tzinfo=brazil_timezone
-    # datetime.fromisoformat(data["data_hora_inicio"]) pode ser naive se Pydantic não adicionar tzinfo na serialização
-    # então, re-adicione tzinfo e converta para UTC para comparação
-    
-    # O valor esperado no fuso horário local
     expected_local_dt = now_local - timedelta(hours=3)
-
-    # O valor recebido da API, convertido para um datetime aware (assumindo que a string ISO representa BRT)
-    # Se a string ISO já incluir tzinfo, fromisoformat já criará um aware datetime
-    # Se for naive, adicionamos o tzinfo do Brasil para que possamos converter para UTC
     received_from_api_dt = datetime.fromisoformat(data["data_hora_inicio"])
     if received_from_api_dt.tzinfo is None:
         received_from_api_dt = received_from_api_dt.replace(tzinfo=brazil_timezone)
-
-    # Compare os valores em UTC para garantir que o ponto no tempo é o mesmo
     assert received_from_api_dt.astimezone(timezone.utc) == expected_local_dt.astimezone(timezone.utc)
 
 
@@ -152,7 +134,7 @@ def test_listar_eventos_por_estacionamento(client, auth_headers):
         "nome": "Estacionamento Listar Eventos",
         "total_vagas": 100, "valor_primeira_hora": 10.0, "valor_demais_horas": 5.0, "valor_diaria": 50.0
     })
-    
+
     now_local = datetime.now(brazil_timezone)
     client.post(
         "/api/eventos/",
@@ -176,7 +158,7 @@ def test_listar_eventos_por_estacionamento(client, auth_headers):
             "id_estacionamento": estacionamento_id
         },
     )
-    
+
     response = client.get(f"/api/eventos/estacionamento/{estacionamento_id}", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
